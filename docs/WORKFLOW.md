@@ -1,12 +1,14 @@
 # Workflow
 
+This is the planned end-to-end workflow, not current CLI behavior. The implemented CLI currently performs only the offline, read-only `repo-curator scan <path>` operation.
+
 ## Principle
 
 Repo Curator is human-in-the-loop by design.
 
 The worker may reason and edit, but the human controls factual claims, risky changes, and final publication quality.
 
-## End-to-end flow
+## Planned end-to-end flow
 
 ```text
 1. SCAN

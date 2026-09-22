@@ -26,6 +26,17 @@ Read these before substantive work:
 - Do not hard-code current model names into domain logic when configuration is appropriate.
 - Keep Repo Curator state outside target repositories.
 - Add tests for deterministic behavior when adding implementation.
+- Update user-facing documentation when behavior/usage changes.
+
+## Current scanner commands
+
+Install project and test dependencies with `uv sync --dev`. Run tests with:
+
+```sh
+uv run --frozen pytest -q
+```
+
+The current CLI supports `repo-curator scan <path>`; add `--json` for the full `ScanResult` containing `RepositoryProfile` and `TriageSummary`. Keep scanning offline and read-only: do not execute target code, install its dependencies, or write into it.
 
 ## TypeSafe / Jev
 

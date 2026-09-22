@@ -1,111 +1,60 @@
 # Repo Curator
 
-A lightweight, human-in-the-loop workflow for auditing, cleaning, documenting, validating, and preparing software repositories for GitHub portfolio publication.
+Repo Curator is intended to help prepare older software repositories for portfolio publication while preserving original work and keeping consequential decisions with the human.
 
-## Status
+## Current status
 
-Design / early implementation.
+The implemented feature is a local, offline, read-only scanner. `repo-curator scan <path>` returns a `RepositoryProfile` with detailed evidence and a derived `TriageSummary` with compact counts and signals. It inventories files and languages, records ignored directories and available local Git metadata, and detects dependency, README, test, build, package-script, entry-point, artifact, Python-import, secret-risk, local-path, and Git-hygiene signals.
 
-The first target use case is old university coursework that should be understandable and presentable without rewriting the original student work.
+The scanner does not execute target code, install dependencies, call a model, or modify the target. Content checks are bounded; findings identify paths, lines, and rules, not matched secret values. The JSON profile includes the target's absolute path and relative file paths, so review it before sharing.
 
-## Why this project exists
+Jev/TypeSafe triage, human-question and run-state management, Codex inspection/editing, deterministic validation, and final-publication review are not implemented yet. The linked workflow and architecture documents describe plans, not available commands.
 
-Cleaning many old repositories manually repeats the same work: inspect the repository, decide how much cleanup is justified, resolve missing context, prepare a safe edit plan, update documentation and packaging, validate the result, and review it before publication.
+## Installation
 
-Repo Curator turns that repeated process into a small, explicit workflow while keeping the human in control.
+Requirements: Python 3.11 or newer and [`uv`](https://docs.astral.sh/uv/).
 
-## Design principles
+From a checkout:
 
-- Preserve authentic work. Imperfection is not a defect.
-- Use deterministic code before spending model tokens.
-- Use models for judgment and editing, not for checks ordinary software can perform.
-- Ask the human for facts the repository cannot establish.
-- Require human review after inspection, after editing, and before declaring a GitHub repository finished.
-- Prefer the cheapest capable worker and escalate only for concrete blockers.
-- Keep documentation and validation proportional to project scope and portfolio value; never manufacture production ceremony for simple coursework.
-- Keep one Codex worker context per repository where practical so inspection knowledge is reused during editing and diagnosis.
-- Do not silently delete, refactor, modernize, or invent attribution.
-
-## Intended workflow
-
-```text
-Target repository
-    |
-    v
-Static scanner
-    |
-    v
-Jev triage
-    |
-    v
-Human clarification
-    |
-    v
-Codex inspection
-    |
-    v
-Human inspection review
-    |
-    v
-Codex editing
-    |
-    v
-Human edit review
-    |
-    v
-Deterministic validation
-    |              |
-   pass           fail
-    |              |
-    |         same Codex worker
-    |            diagnoses
-    |              |
-    +--------------+
-    |
-    v
-Final GitHub review
-    |
-    v
-FINISHED
+```sh
+uv sync --dev
 ```
 
-## Planned stack
+## Usage
 
-- Python
-- `uv`
-- Pydantic
-- Typer
-- Rich
-- TypeSafe Python SDK / Jev for structured triage
-- Codex as the repository worker
-- pytest
-- Git and ordinary ecosystem tooling for validation
+Scan a repository, replacing the example path with the directory to inspect:
 
-No LangGraph or n8n is planned for v1. The workflow is intentionally implemented with normal Python so its state, routing, approvals, and failure handling remain visible and understandable.
+```sh
+uv run --frozen repo-curator scan /path/to/repository
+```
 
-## Initial scope
+The default output is a concise human-readable summary. Add `--json` to print a JSON object with `repository_profile` and `triage_summary`:
 
-V1 should prove one useful loop:
+```sh
+uv run --frozen repo-curator scan /path/to/repository --json
+```
 
-1. Scan a local repository without modifying it.
-2. Build a compact triage summary.
-3. Use Jev for the small set of judgments that should not be hard-coded.
-4. Ask the human for unresolved facts and portfolio priority.
-5. Produce a worker route and inspection instructions.
-6. Run one persistent Codex worker through inspection and approved editing.
-7. Validate the resulting repository deterministically.
-8. Require final human review before marking the run finished.
+Git metadata is collected when Git is available and the directory belongs to a local Git repository. The scanner does not fetch remote data; it cannot establish whether a remote is a fork.
 
-Batch processing, dashboards, databases, autonomous publishing, and complex orchestration frameworks are deliberately out of scope until the single-repository workflow works well.
+## Development
+
+Install the development dependencies, then run the test suite:
+
+```sh
+uv sync --dev
+uv run --frozen pytest -q
+```
+
+Smoke-test the scanner against this checkout with `uv run --frozen repo-curator scan .`.
+
+## Planned direction
+
+The intended single-repository workflow adds structured triage, human clarification and approval checkpoints, one persistent Codex worker for inspection and approved edits, deterministic validation, and final human review. These stages remain design work; the current CLI only supports scanning.
 
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md)
-- [Workflow and human gates](docs/WORKFLOW.md)
+- [Planned workflow](docs/WORKFLOW.md)
 - [Requirements](docs/REQUIREMENTS.md)
 - [Evaluation strategy](docs/EVALUATION.md)
 - [Codex development instructions](AGENTS.md)
-
-## Development philosophy
-
-This project is also a learning project. Changes should be incremental and understandable. Prefer a small working implementation with tests and recorded evaluations over a sophisticated framework whose behavior is difficult to explain.

@@ -2,15 +2,14 @@
 
 Repo Curator should be evaluated as a workflow, not only as a Python program.
 
+The current implementation is the static scanner. Jev, orchestration, editing, and validation have not been implemented or evaluated.
+
 ## Unit tests
 
-Unit tests cover deterministic behavior.
+The current suite has seven deterministic scanner tests covering inventory and language signals, ignored directories, non-execution, CLI JSON output, R3 evidence and summary redaction, local Git metadata, and symlink handling.
 
-Initial examples:
+Future unit-test coverage should include:
 
-- scanner detects Python project metadata;
-- scanner ignores `.venv` contents while recording its existence;
-- scanner does not execute target code;
 - router keeps low-priority archive work cheap;
 - routing/check policy does not add production-style ceremony to simple coursework;
 - router requires a concrete escalation reason;
@@ -21,7 +20,7 @@ Initial examples:
 
 Unit tests should not make paid Jev or Codex calls.
 
-## Triage evals
+## Planned triage evals
 
 Model behavior needs evals separate from unit tests.
 
@@ -54,7 +53,7 @@ Potential metrics:
 - routing outcome;
 - unnecessary escalations.
 
-## Workflow metrics
+## Planned workflow metrics
 
 Record enough telemetry to answer whether Repo Curator is actually useful.
 
@@ -73,7 +72,7 @@ Compare this with a small manual baseline: cleaning similar repositories by chat
 
 The project should not claim token or time savings until measured.
 
-## Success criteria for v1
+## Future v1 success criteria
 
 V1 is successful if, across a small set of real university repositories:
 

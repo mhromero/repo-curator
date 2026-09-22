@@ -8,13 +8,18 @@ The architecture separates deterministic evidence collection, structured model j
 
 ## Components
 
+Only the static scanner is implemented today. Components 2–7 describe the planned architecture and are not wired into the current CLI.
+
 ### 1. Static scanner
 
 Ordinary Python gathers objective repository evidence without executing or modifying the target project.
 
-Output: `RepositoryProfile`.
+`repo-curator scan <path>` returns a `ScanResult` containing:
 
-A compact `TriageSummary` is derived from this profile for Jev.
+- `RepositoryProfile`: rich, path-level deterministic evidence for the run;
+- `TriageSummary`: compact derived counts and signals for later triage, without absolute paths or file contents.
+
+The scan runs offline and does not execute target code, install dependencies, or modify the target repository. Content-based signals use bounded reads and retain only findings, never matched secret values. Git metadata, including remote names and upstream status, is read locally; remote/fork relationships are not verified.
 
 ### 2. Jev triage
 
