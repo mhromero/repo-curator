@@ -231,6 +231,15 @@ def triage_repository(
     provider: TriageProvider | None = None,
 ) -> TriageResult:
     summary = scan_repository(path).triage_summary
+    return triage_summary(summary, model=model, provider=provider)
+
+
+def triage_summary(
+    summary: TriageSummary,
+    *,
+    model: str | None = None,
+    provider: TriageProvider | None = None,
+) -> TriageResult:
     selected_provider = provider or TypeSafeTriageProvider(model=model)
     return selected_provider.triage(summary)
 

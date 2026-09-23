@@ -1,6 +1,6 @@
 # Workflow
 
-This is the planned end-to-end workflow. The implemented CLI supports the offline, read-only `repo-curator scan <path>` operation and the external `repo-curator triage <path>` operation; steps 3–11 are not implemented yet.
+The implemented CLI supports offline scanning, TypeSafe triage, and persisted R5 human-review gates. Codex execution, routing, validation, and publishing are not implemented.
 
 ## Principle
 
@@ -20,7 +20,13 @@ The worker may reason and edit, but the human controls factual claims, risky cha
    Implemented as `repo-curator triage <path>`. It receives a bounded redacted scanner outline and returns hypotheses, not edit authority.
 
 3. CLARIFY
-   Ask the human for unresolved facts and portfolio value.
+   Persist the human portfolio value A/B/C and any confirmed facts.
+
+   Implemented by `repo-curator run start`, `run classify`, and `run answer`.
+   R4 clarification `Noul` probabilities are advisory signals displayed to the
+   human. They do not currently create `FactRequest` records; A/B/C is the only
+   mandatory initial input. Automatic conversion is deferred until evaluation data
+   from real repositories supports a policy.
 
 4. INSPECT
    Codex reads the repository and proposes a concrete plan.
@@ -48,6 +54,31 @@ The worker may reason and edit, but the human controls factual claims, risky cha
 11. FINISHED
     Only explicit final approval closes the run.
 ```
+
+## Implemented R5 state handling
+
+`repo-curator run start <path>` persists the R3 `RepositoryProfile` and R4
+`TriageResult` outside the target repository. It displays R4 clarification signals
+without creating fact requests, then enters `WAITING_FOR_INPUT` until the human sets
+A/B/C with `run classify`; it then resumes at `TRIAGED`. Inspection may later add
+concrete required fact requests.
+
+`WAITING_FOR_INPUT` means a fact or portfolio classification is missing and stores
+the state to resume. `WAITING_APPROVAL` means a concrete R2 approval request is
+pending. They are distinct states and neither action can substitute for the other.
+
+The state functions and CLI can record structured inspection and edit reports from
+a future worker or manual process. They enforce these boundaries:
+
+- inspection reports lead to `WAITING_INSPECTION_REVIEW` unless they introduce a required fact;
+- accepted inspection plans with pending R2 requests lead to `WAITING_APPROVAL`;
+- only all-approved R2 requests may enter `EDITING`;
+- accepted edit reviews lead to `VALIDATING`, never directly to completion;
+- only a future validator may reach `READY_FOR_FINAL_REVIEW`;
+- only explicit `run final approve` moves `READY_FOR_FINAL_REVIEW` to `FINISHED`.
+
+R5 does not generate reports, execute edits, or run validation. Report-intake
+commands exist solely as a narrow seam for the later worker and validator work.
 
 ## Why one Codex worker?
 

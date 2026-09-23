@@ -8,7 +8,7 @@ The architecture separates deterministic evidence collection, structured model j
 
 ## Components
 
-The static scanner and structured triage are implemented today. Components 3–7 describe the planned architecture and are not wired into the current CLI.
+The static scanner, structured triage, and human-review run state are implemented today. Components 4–7 describe the planned architecture and are not wired into the current CLI.
 
 ### 1. Static scanner
 
@@ -29,11 +29,13 @@ Jev does not authorize changes, infer personal facts, choose a Codex model, or v
 
 Output: `TriageResult`.
 
-### 3. Human clarification
+### 3. Human clarification and decision gates
 
-The orchestrator gathers facts that models must not invent and asks the user to assign portfolio value A/B/C.
+`repo-curator run start <path>` scans and triages once, persists both outputs, and requires the human to assign portfolio value A/B/C before the run can leave `WAITING_FOR_INPUT`.
 
-Answers are persisted as run facts so downstream stages do not repeatedly ask the same questions.
+The raw R4 `Noul` clarification probabilities remain advisory model signals displayed to the human; R5 does not turn them into `FactRequest` records. A/B/C is the only mandatory initial human input. The user may record a fact for a suggested topic, and inspection reports may add concrete required facts. Confirmed facts are persisted and are the source of truth for later phases. Automatic conversion of R4 signals into `FactRequest` records is deliberately deferred until real-repository evaluation data supports a policy.
+
+R5 also persists inspection/edit reports and enforces explicit inspection approval, R2 approval requests, edit review, and final-review boundaries. It provides no worker, router, or validator implementation.
 
 ### 4. Deterministic router
 
@@ -123,21 +125,15 @@ Likewise, Codex execution should eventually be isolated behind a worker interfac
 
 Repo Curator state must live outside the target repository to prevent accidental publication.
 
-A future run directory may resemble:
+R5 stores one JSON document per run by default:
 
 ```text
-.repo-curator/
+~/.repo-curator/
   runs/
-    <run-id>/
-      repository.json
-      triage.json
-      decisions.json
-      inspection.json
-      validation.json
-      result.json
+    <run-id>/run.json
 ```
 
-The exact format is not fixed yet.
+The `--state-root` CLI option overrides that location for local use and tests. The document contains the scanner profile, triage result, human facts, portfolio classification, checkpoint reports/decisions, current state, and a compact transition history. It never writes internal state into the target repository.
 
 Important state includes:
 
@@ -147,10 +143,7 @@ Important state includes:
 - portfolio value;
 - inspection report;
 - approved edit plan;
-- baseline validation;
-- actual changes;
-- validation results;
-- escalation history;
+- actual-change report;
 - final human approval.
 
 ## Target-repository boundary

@@ -2,11 +2,11 @@
 
 Repo Curator should be evaluated as a workflow, not only as a Python program.
 
-The current implementation includes the static scanner and TypeSafe/Jev triage. Orchestration, editing, routing, and validation have not been implemented or evaluated.
+The current implementation includes the static scanner, TypeSafe/Jev triage, and deterministic R5 run-state transitions. Codex execution, routing, and validation have not been implemented or evaluated.
 
 ## Unit tests
 
-The current suite has twelve deterministic tests covering scanner inventory and language signals, ignored directories, non-execution, R3 evidence, summary redaction and budgeting, local Git metadata, symlinks, TypeSafe question construction, provider response validation, and mocked triage CLI output. It makes no paid TypeSafe or Codex calls.
+The current suite has twenty-one deterministic tests covering scanner inventory and language signals, ignored directories, non-execution, R3 evidence, summary redaction and budgeting, local Git metadata, symlinks, TypeSafe question construction, provider response validation, mocked CLI output, R5 state transitions, approval boundaries, persistence, and mocked run CLI output. It makes no paid TypeSafe or Codex calls.
 
 Future unit-test coverage should include:
 
@@ -49,6 +49,7 @@ Potential metrics:
 - agreement on cleanup effort;
 - human-clarification recall;
 - inappropriate clarification rate;
+- whether advisory R4 clarification signals should become fact requests, and under what evaluated policy;
 - organization recommendation agreement;
 - routing outcome;
 - unnecessary escalations.

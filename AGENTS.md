@@ -36,7 +36,7 @@ Install project and test dependencies with `uv sync --dev`. Run tests with:
 uv run --frozen pytest -q
 ```
 
-The current CLI supports `repo-curator scan <path>` and `repo-curator triage <path>`; add `--json` for their complete structured outputs. `scan` stays offline and read-only. `triage` makes an external TypeSafe request using `TYPESAFE_API_KEY`, so tests must use fake providers and must not make paid calls. Triage receives the bounded, redacted `TriageSummary`, never source-file bodies, secret values, or the complete `RepositoryProfile`.
+The current CLI supports `repo-curator scan <path>`, `repo-curator triage <path>`, and persisted `repo-curator run` state. Add `--json` to `scan`, `triage`, `run start`, or `run show` for their complete structured outputs. `scan` stays offline and read-only. `triage` and `run start` make an external TypeSafe request using `TYPESAFE_API_KEY`, so tests must use fake providers and must not make paid calls. Run records default to `~/.repo-curator/runs/<run-id>/run.json`; use `--state-root` for isolated local/test state. Triage receives the bounded, redacted `TriageSummary`, never source-file bodies, secret values, or the complete `RepositoryProfile`.
 
 ## TypeSafe / Jev
 
@@ -48,6 +48,7 @@ When working on Jev integration:
 - Keep triage questions/rubrics centralized and easy for humans to review.
 - Do not implement or revise the Jev question contract without explaining the proposed design first.
 - Jev performs structured triage; it does not authorize edits or decide personal facts.
+- Preserve raw `Noul` clarification probabilities as suggestions. Do not add an automatic clarification cutoff without evaluated policy; human-confirmed facts are the downstream source of truth.
 
 ## Codex worker
 
