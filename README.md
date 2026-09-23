@@ -4,11 +4,11 @@ Repo Curator is intended to help prepare older software repositories for portfol
 
 ## Current status
 
-The implemented feature is a local, offline, read-only scanner. `repo-curator scan <path>` returns a `RepositoryProfile` with detailed evidence and a derived `TriageSummary` with compact counts and signals. It inventories files and languages, records ignored directories and available local Git metadata, and detects dependency, README, test, build, package-script, entry-point, artifact, Python-import, secret-risk, local-path, and Git-hygiene signals.
+Implemented features are a local, read-only scanner and TypeSafe/Jev structured triage. `repo-curator scan <path>` returns a detailed `RepositoryProfile` and a redacted `TriageSummary`. `repo-curator triage <path>` scans the target, sends that summary to TypeSafe, and returns typed judgments about repository extent, completeness, portfolio-preparation effort, composition, organization, README and reproducibility expectations, technical domain, and needed human clarification.
 
-The scanner does not execute target code, install dependencies, call a model, or modify the target. Content checks are bounded; findings identify paths, lines, and rules, not matched secret values. The JSON profile includes the target's absolute path and relative file paths, so review it before sharing.
+The scanner runs offline and does not execute target code, install dependencies, or modify the target. The triage summary contains a budgeted relative repository outline: directories, file metadata, special files, README excerpts, configuration, entry points, imports, artifacts, and risk findings. It excludes source-file bodies, secret and local-path values, package-script command bodies, dependency contents, and remote URLs. Review the JSON before sharing because it includes repository and file names.
 
-Jev/TypeSafe triage, human-question and run-state management, Codex inspection/editing, deterministic validation, and final-publication review are not implemented yet. The linked workflow and architecture documents describe plans, not available commands.
+Triage identifies hypotheses and human questions; it does not authorize edits, infer personal facts, select a Codex model, or validate the repository. Human-question and run-state management, routing, Codex inspection/editing, validation, and final-publication review are not implemented yet.
 
 ## Installation
 
@@ -36,6 +36,25 @@ uv run --frozen repo-curator scan /path/to/repository --json
 
 Git metadata is collected when Git is available and the directory belongs to a local Git repository. The scanner does not fetch remote data; it cannot establish whether a remote is a fork.
 
+### TypeSafe triage
+
+Set a TypeSafe API key in your shell, then run triage. Do not add the key to repository files.
+
+```sh
+export TYPESAFE_API_KEY='your-key-here'
+uv run --frozen repo-curator triage /path/to/repository
+```
+
+Set `TYPESAFE_DEFAULT_MODEL` or pass `--model` to choose an available TypeSafe model or alias:
+
+```sh
+export TYPESAFE_DEFAULT_MODEL='your-model-or-alias'
+uv run --frozen repo-curator triage /path/to/repository --json
+uv run --frozen repo-curator triage /path/to/repository --model 'your-model-or-alias'
+```
+
+Triage makes a paid external API request. Its JSON result contains the submitted summary, typed choices with confidence/probabilities, clarification probabilities, and reported token usage.
+
 ## Development
 
 Install the development dependencies, then run the test suite:
@@ -49,7 +68,7 @@ Smoke-test the scanner against this checkout with `uv run --frozen repo-curator 
 
 ## Planned direction
 
-The intended single-repository workflow adds structured triage, human clarification and approval checkpoints, one persistent Codex worker for inspection and approved edits, deterministic validation, and final human review. These stages remain design work; the current CLI only supports scanning.
+The intended single-repository workflow next adds human clarification and approval checkpoints, deterministic routing, one persistent Codex worker for inspection and approved edits, validation, and final human review. These stages remain design work; the current CLI supports scanning and triage only.
 
 ## Documentation
 

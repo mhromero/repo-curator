@@ -22,11 +22,17 @@ from .models import (
     RepositoryEvidence,
     RiskIndicator,
     SpecialFileSignal,
+    TriageReadme,
 )
 
 MAX_CONTENT_FILE_BYTES = 1_048_576
 MAX_CONTENT_TOTAL_BYTES = 16 * 1_048_576
 LARGE_FILE_BYTES = 10 * 1_048_576
+MAX_TRIAGE_README_CHARS = 12_000
+PRIVATE_KEY_BLOCK_PATTERN = re.compile(
+    r"-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY-----.*?-----END (?:[A-Z0-9 ]+ )?PRIVATE KEY-----",
+    re.DOTALL,
+)
 
 DEPENDENCY_FILE_RULES = (
     ("pyproject.toml", "Python", "project_metadata"),
@@ -417,6 +423,9 @@ def analyze_repository_files(
     readme_signals = [
         _readme_signals(path, file_text.get(path)) for path in readme_paths
     ]
+    triage_readmes = [
+        _triage_readme(path, file_text.get(path)) for path in readme_paths
+    ]
     candidate_entry_points = _candidate_entry_points(files, package_scripts)
     python_imports = _python_import_evidence(files, file_text)
     secret_risks, local_path_risks = _risk_indicators(file_text)
@@ -454,6 +463,7 @@ def analyze_repository_files(
             gitignore_present=any(record.path == ".gitignore" for record in files),
         ),
         content_scan=content_scan,
+        triage_readmes=triage_readmes,
     )
 
 
@@ -622,6 +632,47 @@ def _readme_signals(path: str, content: str | None) -> ReadmeSignals:
         sections_present=sorted(sections),
         content_analyzed=True,
     )
+
+
+def _triage_readme(path: str, content: str | None) -> TriageReadme:
+    if content is None:
+        return TriageReadme(path=path)
+
+    redacted_content, redaction_count = _redact_triage_text(content)
+    truncated = len(redacted_content) > MAX_TRIAGE_README_CHARS
+    if truncated:
+        redacted_content = redacted_content[:MAX_TRIAGE_README_CHARS]
+    return TriageReadme(
+        path=path,
+        text=redacted_content,
+        truncated=truncated,
+        redaction_count=redaction_count,
+    )
+
+
+def _redact_triage_text(content: str) -> tuple[str, int]:
+    redacted, redaction_count = PRIVATE_KEY_BLOCK_PATTERN.subn(
+        "[REDACTED_SECRET]", content
+    )
+    for _, pattern, value_group in SECRET_PATTERNS:
+        if value_group is None:
+            redacted, replacements = pattern.subn("[REDACTED_SECRET]", redacted)
+        else:
+            def replace_secret(match: re.Match[str]) -> str:
+                value_start, value_end = match.span(value_group)
+                return (
+                    match.group(0)[: value_start - match.start()]
+                    + "[REDACTED_SECRET]"
+                    + match.group(0)[value_end - match.start() :]
+                )
+
+            redacted, replacements = pattern.subn(replace_secret, redacted)
+        redaction_count += replacements
+
+    for _, pattern in LOCAL_PATH_PATTERNS:
+        redacted, replacements = pattern.subn("[REDACTED_LOCAL_PATH]", redacted)
+        redaction_count += replacements
+    return redacted, redaction_count
 
 
 def _package_scripts(file_text: dict[str, str]) -> list[PackageScripts]:

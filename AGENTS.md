@@ -36,7 +36,7 @@ Install project and test dependencies with `uv sync --dev`. Run tests with:
 uv run --frozen pytest -q
 ```
 
-The current CLI supports `repo-curator scan <path>`; add `--json` for the full `ScanResult` containing `RepositoryProfile` and `TriageSummary`. Keep scanning offline and read-only: do not execute target code, install its dependencies, or write into it.
+The current CLI supports `repo-curator scan <path>` and `repo-curator triage <path>`; add `--json` for their complete structured outputs. `scan` stays offline and read-only. `triage` makes an external TypeSafe request using `TYPESAFE_API_KEY`, so tests must use fake providers and must not make paid calls. Triage receives the bounded, redacted `TriageSummary`, never source-file bodies, secret values, or the complete `RepositoryProfile`.
 
 ## TypeSafe / Jev
 

@@ -61,6 +61,13 @@ class ReadmeSignals(BaseModel):
     content_analyzed: bool = False
 
 
+class TriageReadme(BaseModel):
+    path: str
+    text: str | None = None
+    truncated: bool = False
+    redaction_count: int = 0
+
+
 class PackageScripts(BaseModel):
     path: str
     script_names: list[str] = Field(default_factory=list)
@@ -124,6 +131,7 @@ class RepositoryEvidence(BaseModel):
 class RepositoryAnalysis(BaseModel):
     evidence: RepositoryEvidence
     content_scan: ContentScanInfo = Field(default_factory=ContentScanInfo)
+    triage_readmes: list[TriageReadme] = Field(default_factory=list)
 
 
 class RepositoryProfile(BaseModel):
@@ -137,9 +145,46 @@ class RepositoryProfile(BaseModel):
     total_file_bytes: int = 0
     approximate_repository_size_bytes: int = 0
     content_scan: ContentScanInfo = Field(default_factory=ContentScanInfo)
+    triage_readmes: list[TriageReadme] = Field(default_factory=list)
+
+
+class TriageGitContext(BaseModel):
+    branch: str | None = None
+    upstream: str | None = None
+    remotes: list[str] = Field(default_factory=list)
+    is_dirty: bool | None = None
+    status_counts: GitStatusCounts | None = None
+    scan_is_git_root: bool = False
+
+
+class TriageOutline(BaseModel):
+    directory_name: str
+    git: TriageGitContext | None = None
+    directories: list[str] = Field(default_factory=list)
+    ignored_directories: list[str] = Field(default_factory=list)
+    files: list[FileRecord] = Field(default_factory=list)
+    dependency_files: list[DependencyFile] = Field(default_factory=list)
+    special_files: list[SpecialFileSignal] = Field(default_factory=list)
+    readmes: list[TriageReadme] = Field(default_factory=list)
+    test_files: list[str] = Field(default_factory=list)
+    test_config_files: list[str] = Field(default_factory=list)
+    build_config_files: list[str] = Field(default_factory=list)
+    package_scripts: list[PackageScripts] = Field(default_factory=list)
+    candidate_entry_points: list[CandidateEntryPoint] = Field(default_factory=list)
+    python_imports: list[PythonImportEvidence] = Field(default_factory=list)
+    artifact_files: list[ArtifactFile] = Field(default_factory=list)
+    secret_risks: list[RiskIndicator] = Field(default_factory=list)
+    local_path_risks: list[RiskIndicator] = Field(default_factory=list)
+    hygiene_findings: list[HygieneFinding] = Field(default_factory=list)
+    content_scan: ContentScanInfo = Field(default_factory=ContentScanInfo)
+    outline_truncated: bool = False
+    omitted_item_counts: dict[str, int] = Field(default_factory=dict)
+    serialized_bytes: int = 0
+    max_serialized_bytes: int = 0
 
 
 class TriageSummary(BaseModel):
+    schema_version: str = "r4-triage-v1"
     directory_name: str
     is_git_repository: bool
     git_branch: str | None = None
@@ -169,6 +214,45 @@ class TriageSummary(BaseModel):
     tracked_junk_count: int = 0
     ignored_directory_count: int = 0
     content_analysis_limited: bool = False
+    repository_outline: TriageOutline
+
+
+class ChoiceJudgment(BaseModel):
+    choice: str
+    confidence: float
+    probabilities: dict[str, float] = Field(default_factory=dict)
+
+
+class TriageClarifications(BaseModel):
+    authorship: float
+    academic_context: float
+    repository_boundaries: float
+    data_asset_rights: float
+    intended_execution: float
+
+
+class TriageJudgments(BaseModel):
+    project_extent: ChoiceJudgment
+    repository_completeness: ChoiceJudgment
+    cleanup_effort: ChoiceJudgment
+    repository_composition: ChoiceJudgment
+    technical_domain: ChoiceJudgment
+    organization_treatment: ChoiceJudgment
+    readme_expectation: ChoiceJudgment
+    reproducibility_expectation: ChoiceJudgment
+    clarifications: TriageClarifications
+
+
+class TriageUsage(BaseModel):
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+
+
+class TriageResult(BaseModel):
+    triage_summary: TriageSummary
+    judgments: TriageJudgments
+    provider_model: str
+    usage: TriageUsage = Field(default_factory=TriageUsage)
 
 
 class ScanResult(BaseModel):

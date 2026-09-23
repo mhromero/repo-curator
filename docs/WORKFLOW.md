@@ -1,6 +1,6 @@
 # Workflow
 
-This is the planned end-to-end workflow, not current CLI behavior. The implemented CLI currently performs only the offline, read-only `repo-curator scan <path>` operation.
+This is the planned end-to-end workflow. The implemented CLI supports the offline, read-only `repo-curator scan <path>` operation and the external `repo-curator triage <path>` operation; steps 3–11 are not implemented yet.
 
 ## Principle
 
@@ -16,6 +16,8 @@ The worker may reason and edit, but the human controls factual claims, risky cha
 
 2. TRIAGE
    Jev makes a small number of structured judgments.
+
+   Implemented as `repo-curator triage <path>`. It receives a bounded redacted scanner outline and returns hypotheses, not edit authority.
 
 3. CLARIFY
    Ask the human for unresolved facts and portfolio value.

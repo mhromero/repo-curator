@@ -8,7 +8,7 @@ The architecture separates deterministic evidence collection, structured model j
 
 ## Components
 
-Only the static scanner is implemented today. Components 2–7 describe the planned architecture and are not wired into the current CLI.
+The static scanner and structured triage are implemented today. Components 3–7 describe the planned architecture and are not wired into the current CLI.
 
 ### 1. Static scanner
 
@@ -17,15 +17,15 @@ Ordinary Python gathers objective repository evidence without executing or modif
 `repo-curator scan <path>` returns a `ScanResult` containing:
 
 - `RepositoryProfile`: rich, path-level deterministic evidence for the run;
-- `TriageSummary`: compact derived counts and signals for later triage, without absolute paths or file contents.
+- `TriageSummary`: a budgeted, redacted repository outline for triage. It contains relative paths and selected README text, but not source-file bodies, secret values, local-path values, package-script commands, dependency contents, or remote URLs.
 
 The scan runs offline and does not execute target code, install dependencies, or modify the target repository. Content-based signals use bounded reads and retain only findings, never matched secret values. Git metadata, including remote names and upstream status, is read locally; remote/fork relationships are not verified.
 
 ### 2. Jev triage
 
-TypeSafe/Jev performs a small set of structured judgments that would be brittle to encode as rules.
+`repo-curator triage <path>` scans the local target and sends only its `TriageSummary` to TypeSafe/Jev. It uses centralized `Choice` and `Noul` questions to return typed judgments for later routing, human clarification, and worker inspection context.
 
-The exact question contract must be designed against the current official TypeSafe skill and SDK documentation.
+Jev does not authorize changes, infer personal facts, choose a Codex model, or validate the repository. Its output is a hypothesis-rich `TriageResult`; the future deterministic router interprets it with human portfolio value and scanner evidence.
 
 Output: `TriageResult`.
 

@@ -5,6 +5,7 @@ from pathlib import Path
 import typer
 
 from .scanner import scan_repository
+from .triage import TriageProviderError, triage_repository
 
 app = typer.Typer(no_args_is_help=True, help="Inspect a repository without modifying it.")
 
@@ -89,6 +90,53 @@ def scan(
     typer.echo(
         "Ignored directories: "
         + (", ".join(profile.ignored_directories) or "none")
+    )
+
+
+@app.command()
+def triage(
+    path: Path = typer.Argument(..., help="Repository directory to scan and triage."),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Print the complete triage result as JSON.",
+    ),
+    model: str | None = typer.Option(
+        None,
+        "--model",
+        help="TypeSafe model or alias; defaults to TYPESAFE_DEFAULT_MODEL.",
+    ),
+) -> None:
+    try:
+        result = triage_repository(str(path), model=model)
+    except (OSError, ValueError, TriageProviderError) as error:
+        typer.echo(f"Triage failed: {error}", err=True)
+        raise typer.Exit(code=1) from error
+
+    if json_output:
+        typer.echo(result.model_dump_json(indent=2))
+        return
+
+    judgments = result.judgments
+    typer.echo(f"Provider model: {result.provider_model}")
+    typer.echo(
+        f"Project extent: {judgments.project_extent.choice} "
+        f"({judgments.project_extent.confidence:.2f} confidence)"
+    )
+    typer.echo(
+        f"Cleanup effort: {judgments.cleanup_effort.choice} "
+        f"({judgments.cleanup_effort.confidence:.2f} confidence)"
+    )
+    typer.echo(f"Repository completeness: {judgments.repository_completeness.choice}")
+    typer.echo(f"Organization treatment: {judgments.organization_treatment.choice}")
+    typer.echo(f"README expectation: {judgments.readme_expectation.choice}")
+    typer.echo(
+        "Clarification probabilities: "
+        f"authorship={judgments.clarifications.authorship:.2f}, "
+        f"academic_context={judgments.clarifications.academic_context:.2f}, "
+        f"repository_boundaries={judgments.clarifications.repository_boundaries:.2f}, "
+        f"data_asset_rights={judgments.clarifications.data_asset_rights:.2f}, "
+        f"intended_execution={judgments.clarifications.intended_execution:.2f}"
     )
 
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -13,9 +14,13 @@ from .models import (
     RepositoryIdentity,
     RepositoryProfile,
     ScanResult,
+    TriageGitContext,
+    TriageOutline,
     TriageSummary,
 )
 from .signals import analyze_repository_files
+
+MAX_TRIAGE_OUTLINE_BYTES = 64 * 1_024
 
 IGNORED_DIRECTORY_NAMES = frozenset(
     {
@@ -130,6 +135,7 @@ def scan_repository(path: str | Path) -> ScanResult:
         language_counts=dict(sorted(language_counts.items())),
         evidence=analysis.evidence,
         content_scan=analysis.content_scan,
+        triage_readmes=analysis.triage_readmes,
         python_import_reference_version=(
             f"{sys.version_info.major}.{sys.version_info.minor}"
         ),
@@ -189,7 +195,78 @@ def derive_triage_summary(profile: RepositoryProfile) -> TriageSummary:
         tracked_junk_count=len(evidence.tracked_junk_paths),
         ignored_directory_count=len(profile.ignored_directories),
         content_analysis_limited=profile.content_scan.files_skipped_by_limits > 0,
+        repository_outline=_build_triage_outline(profile),
     )
+
+
+def _build_triage_outline(profile: RepositoryProfile) -> TriageOutline:
+    evidence = profile.evidence
+    git = profile.identity.git
+    outline = TriageOutline(
+        directory_name=profile.identity.directory_name,
+        git=(
+            TriageGitContext(
+                branch=git.branch,
+                upstream=git.upstream,
+                remotes=git.remotes,
+                is_dirty=git.is_dirty,
+                status_counts=git.status_counts,
+                scan_is_git_root=(
+                    Path(git.root_path).resolve() == Path(profile.identity.path).resolve()
+                ),
+            )
+            if git is not None
+            else None
+        ),
+        content_scan=profile.content_scan,
+        max_serialized_bytes=MAX_TRIAGE_OUTLINE_BYTES,
+    )
+    for field_name, items in (
+        ("readmes", profile.triage_readmes),
+        ("dependency_files", evidence.dependency_files),
+        ("special_files", evidence.special_files),
+        ("test_files", evidence.test_files),
+        ("test_config_files", evidence.test_config_files),
+        ("build_config_files", evidence.build_config_files),
+        ("package_scripts", evidence.package_scripts),
+        ("candidate_entry_points", evidence.candidate_entry_points),
+        ("artifact_files", evidence.artifact_files),
+        ("secret_risks", evidence.secret_risks),
+        ("local_path_risks", evidence.local_path_risks),
+        ("hygiene_findings", evidence.hygiene_findings),
+        ("ignored_directories", profile.ignored_directories),
+        ("directories", profile.directories),
+        ("python_imports", evidence.python_imports),
+        ("files", profile.files),
+    ):
+        _append_outline_items(outline, field_name, items)
+    outline.serialized_bytes = len(outline.model_dump_json().encode("utf-8"))
+    return outline
+
+
+def _append_outline_items(
+    outline: TriageOutline,
+    field_name: str,
+    items: list[object],
+) -> None:
+    included_items = getattr(outline, field_name)
+    if outline.serialized_bytes == 0:
+        outline.serialized_bytes = len(outline.model_dump_json().encode("utf-8"))
+    for item in items:
+        item_json = json.dumps(
+            item.model_dump(mode="json") if hasattr(item, "model_dump") else item,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        item_size = len(item_json.encode("utf-8")) + 1
+        if outline.serialized_bytes + item_size > MAX_TRIAGE_OUTLINE_BYTES:
+            outline.outline_truncated = True
+            outline.omitted_item_counts[field_name] = (
+                outline.omitted_item_counts.get(field_name, 0) + 1
+            )
+            continue
+        included_items.append(item)
+        outline.serialized_bytes += item_size
 
 
 def _inventory(root: Path) -> tuple[list[FileRecord], list[str], list[str]]:
