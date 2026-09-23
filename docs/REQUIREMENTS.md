@@ -345,9 +345,9 @@ Record what the execution environment reliably exposes:
 
 Telemetry should support later evaluation of whether routing actually saves time and model usage.
 
-## R7 — Codex Worker Integration
+## R7 — Worker Runtime Integration
 
-Repo Curator must execute repository work through a Codex worker configured
+Repo Curator must execute repository work through a coding worker configured
 from the R6 routing decision.
 
 Requirements:
@@ -362,12 +362,15 @@ Requirements:
 - The first worker phase is read-only inspection.
 - Inspection produces the existing structured `InspectionReport`, including
   any `FactRequest` or `ApprovalRequest`.
-- Reuse the R5 human-input and approval workflow rather than creating a
-  separate worker approval system.
+- Reuse the R5 human-input and approval policy rather than creating a separate
+  source of human authority.
 - Successful inspection transitions to `WAITING_INSPECTION_REVIEW`.
 - Worker failures must not silently advance workflow state.
-- Keep Codex-specific execution behind a small provider boundary so unit tests
-  can use a fake worker without model calls.
+- Generic runtime concerns such as agent execution, sessions, tool execution,
+  pause/resume, and telemetry should use an appropriate maintained runtime
+  rather than being unnecessarily reimplemented by Repo Curator.
+- Keep worker-runtime-specific details behind a small adapter boundary so the
+  domain workflow remains independent and unit tests can use a fake worker.
 - R7 does not implement repository editing or final validation.
 
 ## R8 — Editing, Validation & Completion
@@ -381,6 +384,9 @@ Requirements:
 - Editing is limited to R2 authority and the human-approved inspection plan.
 - Newly discovered actions requiring additional authority must stop for human
   approval.
+- Runtime pause/resume and tool-approval mechanisms may be delegated to the
+  worker runtime, but Repo Curator remains the source of truth for human facts,
+  authority, and workflow state.
 - After editing, transition to `WAITING_EDIT_REVIEW` and require human review
   of the actual changes.
 - After edit approval, run deterministic validation appropriate to the
