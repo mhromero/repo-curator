@@ -344,3 +344,53 @@ Record what the execution environment reliably exposes:
 - final verification status.
 
 Telemetry should support later evaluation of whether routing actually saves time and model usage.
+
+## R7 — Codex Worker Integration
+
+Repo Curator must execute repository work through a Codex worker configured
+from the R6 routing decision.
+
+Requirements:
+
+- Use the R6-selected model family, reasoning effort, and work depth.
+- Maintain one persistent worker context per repository run where practical,
+  reusable across inspection, editing, and diagnosis.
+- Provide the worker with compact relevant context from R3–R6 rather than
+  requiring it to rediscover known information.
+- Human-confirmed facts are authoritative and must not be overridden by worker
+  inference.
+- The first worker phase is read-only inspection.
+- Inspection produces the existing structured `InspectionReport`, including
+  any `FactRequest` or `ApprovalRequest`.
+- Reuse the R5 human-input and approval workflow rather than creating a
+  separate worker approval system.
+- Successful inspection transitions to `WAITING_INSPECTION_REVIEW`.
+- Worker failures must not silently advance workflow state.
+- Keep Codex-specific execution behind a small provider boundary so unit tests
+  can use a fake worker without model calls.
+- R7 does not implement repository editing or final validation.
+
+## R8 — Editing, Validation & Completion
+
+After inspection approval, Repo Curator must allow the same repository worker
+to perform the approved cleanup and then validate the resulting repository.
+
+Requirements:
+
+- Resume the existing worker context where practical.
+- Editing is limited to R2 authority and the human-approved inspection plan.
+- Newly discovered actions requiring additional authority must stop for human
+  approval.
+- After editing, transition to `WAITING_EDIT_REVIEW` and require human review
+  of the actual changes.
+- After edit approval, run deterministic validation appropriate to the
+  project's scope and A/B/C portfolio classification.
+- Preserve baseline evidence where practical so validation failures can be
+  compared with the pre-edit state.
+- Validation produces `VERIFIED`, `PARTIALLY_VERIFIED`, or `BLOCKED`.
+- Validation failures may be diagnosed using the same worker context.
+- Repairs outside existing authority require new human approval.
+- Concrete worker blockers may invoke the R6 escalation policy.
+- Successful validation transitions to `READY_FOR_FINAL_REVIEW`, never
+  directly to `FINISHED`.
+- Only explicit final human approval may transition the run to `FINISHED`.
