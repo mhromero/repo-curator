@@ -82,6 +82,18 @@ uv run --frozen repo-curator run facts <run-id>
 
 The remaining `run inspection`, `run approval`, `run edit`, and `run final` subcommands enforce review-state boundaries and can record human decisions on structured reports. Inspection may introduce concrete `FactRequest` records. They do not produce inspection or edit reports themselves: Codex integration and deterministic validation remain unimplemented. Automatic conversion of R4 clarification signals into `FactRequest` records is deliberately deferred until real-repository evaluation data supports a policy. In particular, no current command can advance a run from `VALIDATING` to `READY_FOR_FINAL_REVIEW`; only a future validator may do that, and `FINISHED` always requires `run final approve`.
 
+### Deterministic routing
+
+After classification, route the persisted run without making another API request or launching a worker:
+
+```sh
+uv run --frozen repo-curator run route <run-id>
+```
+
+The route records work depth, a configuration-neutral cost class, resolved model family/provider model, and reasoning effort. A/B/C plus R4 project extent determine work depth; R4 cleanup effort determines the initial cost class and effort. Repository age, size, file count, and importance alone do not select a stronger configuration.
+
+The default mapping is Luna for economy routes, Terra for enhanced routes, and Sol only for future approved escalations. Model identifiers are configured centrally with `REPO_CURATOR_LUNA_MODEL`, `REPO_CURATOR_TERRA_MODEL`, and `REPO_CURATOR_SOL_MODEL`. Each configured family declares supported effort levels; the current defaults support `low`, `medium`, `high`, and `xhigh`.
+
 ## Development
 
 Install the development dependencies, then run the test suite:
@@ -95,7 +107,7 @@ Smoke-test the scanner against this checkout with `uv run --frozen repo-curator 
 
 ## Planned direction
 
-The intended single-repository workflow next adds deterministic routing, one persistent Codex worker for inspection and approved edits, validation, and final-publication verification. The current CLI does not launch a worker or modify a target repository.
+The intended single-repository workflow next adds one persistent Codex worker for inspection and approved edits, validation, and final-publication verification. The current CLI does not launch a worker or modify a target repository.
 
 ## Documentation
 

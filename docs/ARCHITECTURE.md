@@ -8,7 +8,7 @@ The architecture separates deterministic evidence collection, structured model j
 
 ## Components
 
-The static scanner, structured triage, and human-review run state are implemented today. Components 4–7 describe the planned architecture and are not wired into the current CLI.
+The static scanner, structured triage, human-review run state, and deterministic router are implemented today. Components 5–7 describe the planned architecture and are not wired into the current CLI.
 
 ### 1. Static scanner
 
@@ -39,11 +39,13 @@ R5 also persists inspection/edit reports and enforces explicit inspection approv
 
 ### 4. Deterministic router
 
-Python combines scanner evidence, triage output, human facts, portfolio value, and routing policy.
+`repo-curator run route <run-id>` uses deterministic Python to persist a `RoutingDecision`. It requires the human A/B/C classification and an R4 `TriageResult`.
 
-It decides work depth and initial worker tier. It also enforces escalation policy.
+Portfolio value plus R4 project extent determine work depth. R4 cleanup effort determines a configuration-neutral cost class and reasoning effort; centralized configuration resolves that pair to a supported model family and provider model. Model family and reasoning effort are separate dimensions, not a universal capability ladder.
 
-Work depth is proportional: project extent and human-assigned portfolio value determine which checks and documentation are justified. A small archive exercise should follow a deliberately lighter path than a showcase project.
+The initial policy resolves C/light to Luna/low, B/moderate to Luna/medium, A/light to Luna/low, and B/A substantial effort to an enhanced/high configuration, which defaults to Terra/high. Sol is never selected initially. Repository size, age, file count, or portfolio importance alone do not select a stronger configuration.
+
+R6 defines and persists concrete escalation requests and decisions, including either a reasoning-effort increase, model-family switch, or both. It does not launch a worker or accept worker requests through the CLI yet.
 
 ### 5. Persistent Codex worker
 
@@ -144,6 +146,7 @@ Important state includes:
 - inspection report;
 - approved edit plan;
 - actual-change report;
+- routing decision and escalation history;
 - final human approval.
 
 ## Target-repository boundary

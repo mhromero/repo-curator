@@ -1,8 +1,15 @@
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import Literal
 
 from pydantic import BaseModel, Field
+
+
+class PortfolioClassification(StrEnum):
+    A = "A"
+    B = "B"
+    C = "C"
 
 
 class GitStatusCounts(BaseModel):

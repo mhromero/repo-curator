@@ -6,6 +6,7 @@ from typing import Annotated
 import typer
 
 from .run_store import RunStore
+from .routing import RoutingConfig, RoutingError
 from .scanner import scan_repository
 from .triage import TriageProviderError, triage_repository, triage_summary
 from .workflow import (
@@ -23,6 +24,7 @@ from .workflow import (
     record_inspection_report,
     request_edit_changes,
     request_inspection_changes,
+    route_run,
     set_portfolio_classification,
     start_run,
 )
@@ -282,6 +284,28 @@ def run_classify(
         _workflow_error_and_exit(error)
     typer.echo(f"Portfolio classification: {classification.value}")
     typer.echo(f"State: {run.state.value}")
+
+
+@run_app.command("route")
+def run_route(
+    run_id: str = typer.Argument(..., help="Persisted run identifier."),
+    state_root: StateRootOption = None,
+    json_output: bool = typer.Option(False, "--json", help="Print the routing decision as JSON."),
+) -> None:
+    store = RunStore(state_root)
+    run = _load_run_or_exit(store, run_id)
+    try:
+        decision = route_run(run, RoutingConfig.from_environment())
+        store.save(run)
+    except (WorkflowError, RoutingError) as error:
+        _workflow_error_and_exit(error)
+    if json_output:
+        typer.echo(decision.model_dump_json(indent=2))
+        return
+    typer.echo(f"Work depth: {decision.work_depth.value}")
+    typer.echo(f"Model family: {decision.model_family}")
+    typer.echo(f"Provider model: {decision.provider_model}")
+    typer.echo(f"Reasoning effort: {decision.reasoning_effort.value}")
 
 
 @inspection_app.command("begin")

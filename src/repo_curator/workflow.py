@@ -6,7 +6,16 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator
 
-from .models import RepositoryProfile, TriageResult
+from .models import PortfolioClassification, RepositoryProfile, TriageResult
+from .routing import (
+    EscalationDecision,
+    EscalationRecord,
+    EscalationRequest,
+    RoutingConfig,
+    RoutingDecision,
+    evaluate_escalation,
+    route_repository,
+)
 
 
 class WorkflowError(ValueError):
@@ -26,12 +35,6 @@ class WorkflowState(StrEnum):
     READY_FOR_FINAL_REVIEW = "READY_FOR_FINAL_REVIEW"
     FINISHED = "FINISHED"
     BLOCKED = "BLOCKED"
-
-
-class PortfolioClassification(StrEnum):
-    A = "A"
-    B = "B"
-    C = "C"
 
 
 class ApprovalStatus(StrEnum):
@@ -130,6 +133,8 @@ class RepositoryRun(BaseModel):
     edit_report: EditReport | None = None
     edit_review: ReviewDecision | None = None
     final_review: FinalReview | None = None
+    routing_decision: RoutingDecision | None = None
+    escalations: list[EscalationRecord] = Field(default_factory=list)
     transitions: list[StateTransition] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -207,6 +212,36 @@ def begin_inspection(run: RepositoryRun) -> None:
     if run.has_pending_input:
         raise WorkflowError("Human facts and portfolio classification must be confirmed first.")
     _transition(run, WorkflowState.INSPECTING, "begin_inspection")
+
+
+def route_run(run: RepositoryRun, config: RoutingConfig) -> RoutingDecision:
+    _require_state(run, WorkflowState.TRIAGED)
+    if run.triage_result is None:
+        raise WorkflowError("A triage result is required before routing.")
+    if run.portfolio_classification is None:
+        raise WorkflowError("Portfolio classification is required before routing.")
+    decision = route_repository(
+        run.repository_profile,
+        run.triage_result,
+        run.portfolio_classification,
+        config,
+    )
+    run.routing_decision = decision
+    _touch(run)
+    return decision
+
+
+def record_escalation(
+    run: RepositoryRun,
+    request: EscalationRequest,
+    config: RoutingConfig,
+) -> EscalationDecision:
+    if run.routing_decision is None:
+        raise WorkflowError("An initial routing decision is required before escalation.")
+    decision = evaluate_escalation(run.routing_decision, request, config)
+    run.escalations.append(EscalationRecord(request=request, decision=decision))
+    _touch(run)
+    return decision
 
 
 def record_inspection_report(run: RepositoryRun, report: InspectionReport) -> None:

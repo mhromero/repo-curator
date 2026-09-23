@@ -1,6 +1,6 @@
 # Workflow
 
-The implemented CLI supports offline scanning, TypeSafe triage, and persisted R5 human-review gates. Codex execution, routing, validation, and publishing are not implemented.
+The implemented CLI supports offline scanning, TypeSafe triage, persisted R5 human-review gates, and deterministic R6 initial routing. Codex execution, validation, and publishing are not implemented.
 
 ## Principle
 
@@ -28,30 +28,34 @@ The worker may reason and edit, but the human controls factual claims, risky cha
    mandatory initial input. Automatic conversion is deferred until evaluation data
    from real repositories supports a policy.
 
-4. INSPECT
+4. ROUTE
+   Deterministic Python records proportionate work depth plus a configured model
+   family and reasoning effort. It does not launch a worker.
+
+5. INSPECT
    Codex reads the repository and proposes a concrete plan.
    No substantive edits.
 
-5. INSPECTION REVIEW
+6. INSPECTION REVIEW
    Human approves/modifies the plan and resolves approvals.
 
-6. EDIT
+7. EDIT
    The same Codex context performs the approved work.
 
-7. EDIT REVIEW
+8. EDIT REVIEW
    Human reviews the actual diff and requests changes or approves.
 
-8. VALIDATE
+9. VALIDATE
    Deterministic checks establish what actually works.
 
-9. DIAGNOSE, if needed
+10. DIAGNOSE, if needed
    The same Codex context reasons about validation failures.
    New risky fixes return to human approval.
 
-10. FINAL GITHUB REVIEW
+11. FINAL GITHUB REVIEW
     Human reviews the published repository.
 
-11. FINISHED
+12. FINISHED
     Only explicit final approval closes the run.
 ```
 
@@ -79,6 +83,23 @@ a future worker or manual process. They enforce these boundaries:
 
 R5 does not generate reports, execute edits, or run validation. Report-intake
 commands exist solely as a narrow seam for the later worker and validator work.
+
+## Implemented R6 routing
+
+`repo-curator run route <run-id>` requires `TRIAGED`, an R4 triage result, and a
+human A/B/C classification. It records work depth from A/B/C plus R4
+`project_extent`, then records cost class and reasoning effort from R4
+`cleanup_effort`. Configuration resolves that intent to a supported model family.
+
+The default initial routes are C/light → Luna/low, C/non-light → Luna/medium,
+B/moderate → Luna/medium, A/light → Luna/low, and B/A substantial → Terra/high.
+Sol is escalation-only. Higher work depth does not itself select a stronger model.
+
+An escalation record requires a concrete blocker, attempts already made, why the
+new configuration should help, and confirmation that the work remains within
+approved scope. It may increase reasoning effort within a model family, switch
+families, or change both. R6 persists and evaluates that contract but does not yet
+receive or act on worker escalation requests.
 
 ## Why one Codex worker?
 

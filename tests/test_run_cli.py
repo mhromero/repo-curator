@@ -42,6 +42,10 @@ def test_run_cli_persists_classification_and_shows_triage_signals(
         app,
         ["run", "classify", run_id, "B", "--state-root", str(state_root)],
     )
+    route = runner.invoke(
+        app,
+        ["run", "route", run_id, "--state-root", str(state_root)],
+    )
     show = runner.invoke(
         app,
         ["run", "show", run_id, "--state-root", str(state_root)],
@@ -49,6 +53,9 @@ def test_run_cli_persists_classification_and_shows_triage_signals(
 
     assert classify.exit_code == 0
     assert "State: TRIAGED" in classify.stdout
+    assert route.exit_code == 0
+    assert "Model family: luna" in route.stdout
+    assert "Reasoning effort: low" in route.stdout
     assert show.exit_code == 0
     assert "Portfolio classification: B" in show.stdout
     assert "suggestions, not required facts" in show.stdout
@@ -61,7 +68,7 @@ def _triage_result(summary):
         judgments=TriageJudgments(
             project_extent=judgment,
             repository_completeness=judgment,
-            cleanup_effort=judgment,
+            cleanup_effort=ChoiceJudgment(choice="light", confidence=0.8),
             repository_composition=judgment,
             technical_domain=judgment,
             organization_treatment=judgment,
