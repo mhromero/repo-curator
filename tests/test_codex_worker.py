@@ -121,6 +121,8 @@ def test_codex_worker_edits_in_resumed_workspace_write_context(
     assert arguments[arguments.index("resume") + 1] == "existing-thread"
     assert "approved cleanup" in arguments[-1]
     assert "Safe changes are limited" in arguments[-1]
+    assert "Repository identity is controlled outside this worker" in arguments[-1]
+    assert "do not rename the repository directory" in arguments[-1]
     assert "Independent work." in arguments[-1]
 
 

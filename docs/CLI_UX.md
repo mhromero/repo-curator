@@ -29,6 +29,17 @@ use should not require knowledge of the internal state machine.
   to rename only the local directory. Explain that no remote is renamed; on a
   declined rename, offer an optional persisted note and leave the workflow safely
   stopped at `BLOCKED`.
+- At final review, show validation status and concerns, source-code-change status,
+  the exact GitHub target, visibility, branch, and reviewed Git changes before
+  asking for publication approval.
+- Do not run Git or GitHub mutating commands until that final approval. Explain
+  when a new repository will be created and that pushes are non-force.
+- A nonblank final-review decline is a requested repository revision: persist the
+  note, offer confirmation of one unambiguous R1-shaped replacement name mentioned
+  in that note, and resume the same Codex editing context. It does not ask about
+  repository naming when no replacement is mentioned; only ambiguous candidates
+  use explicit manual entry. A blank decline stops publication without resuming
+  work.
 - Resume the existing worker context when continuing worker work.
 - Never require the user to manually copy worker output, IDs, or structured
   state between commands.

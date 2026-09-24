@@ -244,7 +244,13 @@ If validation fails, the same Codex worker context should diagnose the failure w
 
 Passing automated checks is not equivalent to completion.
 
-After validation, the human reviews the actual published GitHub repository. Only explicit human approval marks the workflow `FINISHED`.
+After validation, the human reviews the proposed GitHub target, visibility, branch,
+and exact local Git changes before publication. Explicit approval authorizes a
+normal commit and non-force push; only a successful publication records
+`FINISHED`. Repo Curator must not retarget a remote, publish a fork, or publish
+to another user or organization without an explicit, supported ownership path.
+It may rename an existing remote repository only when the final review explicitly
+shows the exact rename and authenticated ownership checks pass.
 
 ### Core workflow states
 
@@ -400,4 +406,6 @@ Requirements:
 - Concrete worker blockers may invoke the R6 escalation policy.
 - Successful validation transitions to `READY_FOR_FINAL_REVIEW`, never
   directly to `FINISHED`.
-- Only explicit final human approval may transition the run to `FINISHED`.
+- Final approval authorizes publication but does not itself transition the run to
+  `FINISHED`; the transition requires a successful recorded commit and non-force
+  push.

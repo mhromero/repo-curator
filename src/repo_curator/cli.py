@@ -7,12 +7,14 @@ from typing import Annotated, Any
 import typer
 
 from .codex_worker import CodexCliWorker
+from .publication import GitHubCliPublisher, PublicationError, PublicationInputRequired
 from .run_store import RunStore
 from .routing import RoutingConfig, RoutingError, migrate_legacy_provider_model
 from .scanner import scan_repository
 from .triage import TriageProviderError, triage_repository, triage_summary
 from .validation import (
     capture_validation_baseline,
+    extract_repository_name_candidates,
     repository_name_is_valid,
     validate_repository,
 )
@@ -40,10 +42,14 @@ from .workflow import (
     record_inspection_report,
     record_repository_rename_decision,
     record_validation_report,
+    finish_publication,
+    reject_final_review,
+    request_final_review_changes,
     request_edit_changes,
     request_inspection_changes,
     request_repository_naming_confirmation,
     request_repository_rename_approval,
+    request_github_visibility,
     retry_validation,
     route_run,
     set_portfolio_classification,
@@ -233,6 +239,7 @@ def guided_run(
     ),
     state_root: StateRootOption = None,
     codex_bin: str = typer.Option("codex", "--codex-bin", help="Codex CLI executable."),
+    gh_bin: str = typer.Option("gh", "--gh-bin", help="GitHub CLI executable for final publication."),
 ) -> None:
     """Run the normal human-guided workflow without exposing a run identifier."""
     path = Path(context.meta["guided_repository_path"])
@@ -252,8 +259,8 @@ def guided_run(
             _print_triage_clarifications(run)
         else:
             typer.echo(f"Resuming run for {run.repository_profile.identity.path}.")
-        _drive_guided_workflow(store, run, codex_bin)
-    except (OSError, RoutingError, TriageProviderError, ValueError, WorkflowError, WorkerRuntimeError) as error:
+        _drive_guided_workflow(store, run, codex_bin, gh_bin)
+    except (OSError, RoutingError, TriageProviderError, ValueError, WorkflowError, WorkerRuntimeError, PublicationError) as error:
         _workflow_error_and_exit(error)
 
 
@@ -648,7 +655,50 @@ def final_approve(
         store.save(run)
     except WorkflowError as error:
         _workflow_error_and_exit(error)
-    typer.echo("State: FINISHED")
+    typer.echo("Final approval recorded. Run `repo-curator run final publish <run-id>` to publish.")
+    typer.echo(f"State: {run.state.value}")
+
+
+@final_app.command("publish")
+def final_publish(
+    run_id: str = typer.Argument(..., help="Persisted run identifier."),
+    state_root: StateRootOption = None,
+    gh_bin: str = typer.Option("gh", "--gh-bin", help="GitHub CLI executable."),
+    git_bin: str = typer.Option("git", "--git-bin", help="Git executable."),
+) -> None:
+    store = RunStore(state_root)
+    run = _load_run_or_exit(store, run_id)
+    try:
+        _execute_publication(store, run, GitHubCliPublisher(gh_bin=gh_bin, git_bin=git_bin))
+    except (WorkflowError, PublicationError) as error:
+        _workflow_error_and_exit(error)
+    typer.echo(f"State: {run.state.value}")
+
+
+@final_app.command("request-changes")
+def final_request_changes(
+    run_id: str = typer.Argument(..., help="Persisted run identifier."),
+    notes: str = typer.Argument(..., help="Requested repository changes for the existing Codex worker."),
+    repository_name: str | None = typer.Option(
+        None,
+        "--repository-name",
+        help="Optional replacement R1 repository name in uni-year-class format.",
+    ),
+    state_root: StateRootOption = None,
+) -> None:
+    store = RunStore(state_root)
+    run = _load_run_or_exit(store, run_id)
+    try:
+        if repository_name is not None:
+            if not repository_name_is_valid(repository_name):
+                raise WorkflowError("Repository name must follow the `uni-year-class` convention.")
+            record_fact(run, "repository_naming", repository_name)
+        request_final_review_changes(run, notes)
+        store.save(run)
+    except WorkflowError as error:
+        _workflow_error_and_exit(error)
+    typer.echo("Final review changes requested; resuming the existing Codex worker context.")
+    typer.echo(f"State: {run.state.value}")
 
 
 def _load_run_or_exit(store: RunStore, run_id: str):
@@ -812,6 +862,27 @@ def _execute_validation(store: RunStore, run):
     return report
 
 
+def _prepare_publication(run, publisher: GitHubCliPublisher):
+    naming = run.human_facts.get("repository_naming")
+    if naming is None:
+        raise WorkflowError("Final publication requires the human-confirmed repository name.")
+    visibility = run.human_facts.get("github_visibility")
+    return publisher.prepare(
+        Path(run.repository_profile.identity.path),
+        expected_name=naming.value,
+        visibility=visibility.value if visibility is not None else None,
+    )
+
+
+def _execute_publication(store: RunStore, run, publisher: GitHubCliPublisher) -> None:
+    if run.final_review is None or not run.final_review.approved:
+        raise WorkflowError("Explicit final review approval is required before publication.")
+    plan = _prepare_publication(run, publisher)
+    result = publisher.publish(plan)
+    finish_publication(run, result)
+    store.save(run)
+
+
 def _apply_approved_local_repository_rename(run, source_path: Path, target_name: str) -> None:
     """Move the local directory after the associated persisted approval."""
     try:
@@ -841,6 +912,7 @@ def _apply_approved_local_repository_rename(run, source_path: Path, target_name:
             pass
         else:
             identity.git.root_path = str(destination / relative_git_root)
+    _retire_resolved_local_naming_concerns(run)
     typer.echo(f'Local repository renamed to "{target_name}". No remote was changed.')
 
 
@@ -848,6 +920,7 @@ def _drive_guided_workflow(
     store: RunStore,
     run,
     codex_bin: str,
+    gh_bin: str = "gh",
 ) -> None:
     """Advance the normal CLI journey until this milestone's edit-review gate."""
     while True:
@@ -904,12 +977,24 @@ def _drive_guided_workflow(
             if report is None:
                 continue
             _print_validation_report(report)
+            if run.state == WorkflowState.READY_FOR_FINAL_REVIEW:
+                continue
             typer.echo(f"State: {run.state.value}")
             return
 
         if run.state == WorkflowState.READY_FOR_FINAL_REVIEW:
-            typer.echo("Validation is complete. Publication and final review are not implemented.")
-            typer.echo(f"State: {run.state.value}")
+            if _retire_resolved_local_naming_concerns(run):
+                store.save(run)
+            publisher = GitHubCliPublisher(gh_bin=gh_bin)
+            try:
+                plan = _prepare_publication(run, publisher)
+            except PublicationInputRequired as error:
+                if error.key != "github_visibility" or not request_github_visibility(run):
+                    raise
+                store.save(run)
+                continue
+            if _review_and_publish(store, run, publisher, plan):
+                continue
             return
 
         if run.state == WorkflowState.BLOCKED:
@@ -942,6 +1027,75 @@ def _drive_guided_workflow(
         return
 
 
+def _review_and_publish(store: RunStore, run, publisher: GitHubCliPublisher, plan) -> bool:
+    _print_final_review(run, plan)
+    if run.final_review is None or not run.final_review.approved:
+        if not typer.confirm("Approve publication to this GitHub repository?", default=False):
+            notes = typer.prompt(
+                "Describe requested repository changes (leave blank to stop publication without changes)",
+                default="",
+                show_default=False,
+            ).strip() or None
+            if notes:
+                replacement_name = _prompt_updated_repository_name(run, notes)
+                if replacement_name is not None:
+                    record_fact(run, "repository_naming", replacement_name)
+                request_final_review_changes(run, notes)
+                store.save(run)
+                typer.echo("Final review changes requested; resuming the existing Codex worker context.")
+                return True
+            reject_final_review(run, notes)
+            store.save(run)
+            typer.echo("Final publication approval was declined. No Git or GitHub changes were made.")
+            typer.echo(f"State: {run.state.value}")
+            return False
+        approve_final_review(run)
+        store.save(run)
+        typer.echo("Final approval recorded. Publishing the reviewed repository...")
+    else:
+        typer.echo("Final approval was already recorded. Retrying publication without changing the review decision.")
+    _execute_publication(store, run, publisher)
+    result = run.publication_result
+    assert result is not None
+    typer.echo(f"Published {result.repository} branch {result.branch} at {result.commit_sha}.")
+    typer.echo("State: FINISHED")
+    return False
+
+
+def _prompt_updated_repository_name(run, notes: str) -> str | None:
+    current = run.human_facts.get("repository_naming")
+    candidates = [
+        candidate
+        for candidate in extract_repository_name_candidates(notes)
+        if current is None or candidate != current.value
+    ]
+    if not candidates:
+        return None
+    if len(candidates) == 1:
+        candidate = candidates[0]
+        if typer.confirm(f'Use "{candidate}" as the updated repository name?', default=True):
+            return candidate
+        return None
+    return _prompt_disambiguated_repository_name(run)
+
+
+def _prompt_disambiguated_repository_name(run) -> str | None:
+    current = run.human_facts.get("repository_naming")
+    value = typer.prompt(
+        "Choose the updated repository name (optional; press Enter to keep the current confirmed name)",
+        default="",
+        show_default=False,
+    ).strip()
+    if not value:
+        return None
+    if not repository_name_is_valid(value):
+        typer.echo("Repository name must follow the `uni-year-class` convention.", err=True)
+        return _prompt_disambiguated_repository_name(run)
+    if current is not None and value == current.value:
+        return None
+    return value
+
+
 def _repository_name_needs_rename(run) -> bool:
     fact = run.human_facts.get("repository_naming")
     if fact is None or not repository_name_is_valid(fact.value):
@@ -952,6 +1106,30 @@ def _repository_name_needs_rename(run) -> bool:
         request.status == ApprovalStatus.APPROVED
         for request in run.validation_approval_requests
     )
+
+
+def _retire_resolved_local_naming_concerns(run) -> bool:
+    """Remove only stale worker concerns once the confirmed local name is true."""
+    naming = run.human_facts.get("repository_naming")
+    if naming is None or run.repository_profile.identity.directory_name != naming.value:
+        return False
+
+    changed = False
+    for report in (run.edit_report, run.validation_report):
+        if report is None:
+            continue
+        remaining = [
+            concern
+            for concern in report.unresolved_concerns
+            if not (
+                "repository remains named" in concern.casefold()
+                and "locally" in concern.casefold()
+            )
+        ]
+        if len(remaining) != len(report.unresolved_concerns):
+            report.unresolved_concerns = remaining
+            changed = True
+    return changed
 
 
 def _review_repository_rename(store: RunStore, run) -> bool:
@@ -1122,6 +1300,38 @@ def _print_validation_report(report) -> None:
         typer.echo("Human action is required before this repository can proceed to final review.")
     else:
         typer.echo("Validation is complete; the repository is ready for final human review.")
+
+
+def _print_final_review(run, plan) -> None:
+    """Render only the evidence and target relevant to the irreversible push."""
+    typer.echo("Final publication review")
+    typer.echo("─" * 36)
+    if run.validation_report is not None:
+        typer.echo(f"Verification outcome: {run.validation_report.verification_status.value}")
+        _print_report_section(
+            "Unresolved concerns",
+            run.validation_report.unresolved_concerns,
+        )
+    if run.edit_report is not None:
+        typer.echo(f"Source code changed: {'yes' if run.edit_report.source_code_changed else 'no'}")
+    typer.echo(f"GitHub repository: {plan.repository}")
+    typer.echo(f"Visibility: {plan.visibility}")
+    typer.echo(f"Branch to push: {plan.branch}")
+    typer.echo(
+        "Repository target: "
+        + ("create a new repository" if plan.create_repository else "use existing origin")
+    )
+    if plan.rename_existing_repository:
+        typer.echo(
+            f"Remote rename: {plan.owner}/{plan.existing_repository_name} → {plan.repository}"
+        )
+    typer.echo("Reviewed Git changes:")
+    if plan.worktree_status:
+        for line in plan.worktree_status:
+            typer.echo(f"- {_format_git_status_line(line)}")
+    else:
+        typer.echo("- no uncommitted changes; the current commit will be pushed.")
+    typer.echo("Publication safeguards: no force push, and no fork or foreign-owner target.")
 
 
 def _print_report_section(title: str, values: list[str]) -> None:

@@ -76,15 +76,17 @@ implemented edit-review decision. Keep `run continue <run-id>`, `run input`,
 
 The guided command collects A/B/C, routes, runs read-only inspection through fact
 requests, presents the inspection plan and R2 approvals, then starts only the
-approved editing scope and collects the edit-review decision. It then stops at
-`READY_FOR_FINAL_REVIEW` or `BLOCKED` after deterministic validation; do not add
-publication here.
+approved editing scope and collects the edit-review decision. After successful
+validation it presents final publication review, and only then may use the local
+Git and authenticated `gh` CLIs to commit and non-force push. Keep GitHub details
+behind the publication adapter; tests must use a fake runner and never touch a real remote.
 
 Phases:
 
 1. read-only inspection;
 2. approved editing;
-3. validation-failure diagnosis when required.
+3. validation-failure diagnosis when required;
+4. final human-approved Git/GitHub publication.
 
 Do not create separate inspector/editor agents unless evaluation demonstrates a clear benefit that outweighs repeated context cost.
 

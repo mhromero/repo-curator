@@ -213,6 +213,11 @@ def _edit_prompt(request: EditRequest) -> str:
             "duplicated, or incorrect.",
             "Do not modify source behavior, tests, dependencies, licensing, meaningful artifacts,",
             "or repository structure unless that exact action is explicitly approved in the context.",
+            "Repository identity is controlled outside this worker: do not rename the repository "
+            "directory, change Git remotes, invoke GitHub, or request authority for those actions. "
+            "The guided controller applies a locally approved directory rename and, after separate "
+            "final publication approval, any GitHub repository or remote rename. If a revision note "
+            "mentions repository naming, perform only its in-repository file changes.",
             "Do not invent factual claims, attribution, academic context, results, or rights.",
             "Do not use the network or install dependencies. Cheap local sanity checks are allowed",
             "only when non-destructive and relevant to the approved work; they are not final validation.",

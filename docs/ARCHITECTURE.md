@@ -8,7 +8,7 @@ The architecture separates deterministic evidence collection, structured model j
 
 ## Components
 
-The static scanner, structured triage, human-review run state, deterministic router, Codex inspection/edit worker, and deterministic validator are implemented today. Final GitHub review remains planned.
+The static scanner, structured triage, human-review run state, deterministic router, Codex inspection/edit worker, deterministic validator, and final GitHub publication adapter are implemented today.
 
 ### 1. Static scanner
 
@@ -35,7 +35,7 @@ Output: `TriageResult`.
 
 The raw R4 `Noul` clarification probabilities remain advisory model signals displayed to the human; R5 does not turn them into `FactRequest` records. A/B/C is the only mandatory initial human input. The user may record a fact for a suggested topic, and inspection reports may add concrete required facts. Interactive inspection resumes the persisted Codex context after those facts are confirmed. Confirmed facts are persisted and are the source of truth for later phases. Automatic conversion of R4 signals into `FactRequest` records is deliberately deferred until real-repository evaluation data supports a policy.
 
-R5 persists inspection/edit reports and enforces explicit inspection approval, R2 approval requests, edit review, and final-review boundaries. R7 supplies read-only inspection; R8 resumes the thread for approved editing. Validation remains unimplemented.
+R5 persists inspection/edit reports and enforces explicit inspection approval, R2 approval requests, edit review, and final-review boundaries. R7 supplies read-only inspection; R8 resumes the thread for approved editing, validation, and final publication.
 
 ### 4. Deterministic router
 
@@ -91,14 +91,22 @@ files without executing them, and runs existing Python tests without installing
 dependencies. It records `VERIFIED`, `PARTIALLY_VERIFIED`, or `BLOCKED`; only the
 first two reach `READY_FOR_FINAL_REVIEW`. It requests the exact human-confirmed
 R1 `uni-year-class` repository name rather than inferring its values, and never
-renames a remote repository. A mismatch becomes a persisted approval request;
+renames a remote repository during validation. A mismatch becomes a persisted approval request;
 only an approved deterministic local filesystem move updates the run's saved
 repository path. A declined move is recorded as `BLOCKED` with an optional human
 note rather than being sent to a worker.
 
-### 7. Human final review
+### 7. Human final review and publication
 
-The user reviews the actual GitHub repository. Automated success only makes the repository ready for final review; it does not mark the run finished.
+Automated success only makes the repository ready for final review. A small GitHub
+CLI adapter preflights authenticated access and an existing `origin`, or prepares
+a new personal repository using the human-confirmed R1 name and visibility. The
+guided CLI renders that plan before approval. After approval it may commit all
+reviewed local changes and use a normal non-force push. An authenticated personal
+remote rename is allowed only when its exact before/after identity is shown in
+final review; forks, retargeting, and foreign/organization-owned remotes are
+refused. `FINISHED`
+requires the adapter to record a successful push, not merely the approval.
 
 ## Why no LangGraph in v1?
 

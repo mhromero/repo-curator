@@ -23,11 +23,19 @@ MAX_PYTHON_SOURCE_BYTES = 1_000_000
 # The class component is a slug and may itself contain hyphens, e.g.
 # ``vgtu-2024-intelligent-systems``.
 REPOSITORY_NAMING_PATTERN = re.compile(r"^[A-Za-z0-9]+-[0-9]{4}-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$")
+REPOSITORY_NAMING_CANDIDATE_PATTERN = re.compile(
+    r"(?<![A-Za-z0-9-])([A-Za-z0-9]+-[0-9]{4}-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)(?![A-Za-z0-9-])"
+)
 
 
 def repository_name_is_valid(name: str) -> bool:
     """Return whether a human-supplied R1 name has the required shape."""
     return bool(REPOSITORY_NAMING_PATTERN.fullmatch(name.strip()))
+
+
+def extract_repository_name_candidates(text: str) -> list[str]:
+    """Return distinct R1-shaped names mentioned in free-form human feedback."""
+    return list(dict.fromkeys(match.group(1) for match in REPOSITORY_NAMING_CANDIDATE_PATTERN.finditer(text)))
 
 
 def capture_validation_baseline(repository_path: Path) -> ValidationBaseline:

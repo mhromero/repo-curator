@@ -22,6 +22,7 @@ from repo_curator.workflow import (
     FactRequest,
     InspectionReport,
     PortfolioClassification,
+    PublicationResult,
     WorkflowError,
     WorkflowState,
     ValidationReport,
@@ -33,12 +34,14 @@ from repo_curator.workflow import (
     begin_inspection,
     decide_approval,
     mark_ready_for_final_review,
+    finish_publication,
     record_edit_report,
     record_fact,
     record_inspection_report,
     record_repository_rename_decision,
     record_validation_report,
     request_inspection_changes,
+    request_final_review_changes,
     request_repository_naming_confirmation,
     request_repository_rename_approval,
     retry_validation,
@@ -222,9 +225,47 @@ def test_finished_requires_explicit_final_human_approval(tmp_path: Path) -> None
     assert run.state == WorkflowState.READY_FOR_FINAL_REVIEW
     approve_final_review(run, "Published repository reviewed.")
 
-    assert run.state == WorkflowState.FINISHED
+    assert run.state == WorkflowState.READY_FOR_FINAL_REVIEW
     assert run.final_review is not None
     assert run.final_review.approved is True
+    finish_publication(
+        run,
+        PublicationResult(
+            repository="maria/uni-2026-class",
+            branch="main",
+            commit_sha="abc123",
+            created_repository=True,
+        ),
+    )
+    assert run.state == WorkflowState.FINISHED
+
+
+def test_final_review_change_request_resumes_editing_and_reuses_worker_revision_notes(
+    tmp_path: Path,
+) -> None:
+    profile, triage_result = _scan_and_triage(tmp_path)
+    run = _triaged_run(profile, triage_result)
+    route_run(run, RoutingConfig.from_environment())
+    begin_inspection(run)
+    record_inspection_report(run, InspectionReport(summary="Inspection complete."))
+    approve_inspection(run)
+    record_edit_report(run, EditReport(modified_files=["README.md"]))
+    approve_edit(run)
+    mark_ready_for_final_review(run)
+    record_fact(run, "repository_naming", "uni-2026-revised")
+
+    request_final_review_changes(
+        run,
+        "Rename Data1.txt to data1.txt and update its notebook reference.",
+    )
+
+    assert run.state == WorkflowState.EDITING
+    assert run.final_review is not None and run.final_review.approved is False
+    assert run.edit_review is not None
+    assert run.edit_review.outcome == "changes_requested"
+    request = build_edit_request(run)
+    assert request.human_facts["repository_naming"] == "uni-2026-revised"
+    assert request.revision_notes == "Rename Data1.txt to data1.txt and update its notebook reference."
 
 
 def test_validation_requires_human_naming_confirmation_and_records_outcome(tmp_path: Path) -> None:

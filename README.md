@@ -10,11 +10,11 @@ The scanner runs offline and does not execute target code, install dependencies,
 
 Triage identifies hypotheses; it does not authorize edits, infer personal facts, select a Codex model, or validate the repository. Its R4 `Noul` clarification probabilities are advisory signals shown to the human. They do not currently create `FactRequest` records. A/B/C portfolio classification is the only mandatory initial human input; the human may also record confirmed facts for suggested topics. Those facts are the downstream source of truth.
 
-R5 persists a run and applies explicit human input and approval gates. R6 records the deterministic model and reasoning-effort route. R7 launches read-only Codex inspection; R8 resumes its thread for human-approved, R2-limited editing, records a structured edit report, and runs bounded deterministic validation. It does not publish to GitHub.
+R5 persists a run and applies explicit human input and approval gates. R6 records the deterministic model and reasoning-effort route. R7 launches read-only Codex inspection; R8 resumes its thread for human-approved, R2-limited editing, records a structured edit report, runs bounded deterministic validation, and publishes only after final human approval.
 
 ## Installation
 
-Requirements: Python 3.11 or newer and [`uv`](https://docs.astral.sh/uv/). Codex inspection and approved editing require the local Codex CLI authenticated with `codex login`.
+Requirements: Python 3.11 or newer and [`uv`](https://docs.astral.sh/uv/). Codex inspection and approved editing require the local Codex CLI authenticated with `codex login`. Final publication requires the authenticated [GitHub CLI](https://cli.github.com/) (`gh auth login`).
 
 From a checkout:
 
@@ -84,7 +84,7 @@ Validation asks the human to enter the exact repository name required by the R1
 `uni-year-class` convention. Repo Curator never invents the university, year, or
 class value. When that name differs from the local directory, the guided flow
 shows a separate approval request before moving the local directory; it never
-renames a remote repository. A malformed name, a declined rename, or another
+renames a remote repository during validation. A malformed name, a declined rename, or another
 failed required check is `BLOCKED` for human action. A declined naming rename
 leaves the folder unchanged and accepts an optional persisted human note.
 
@@ -92,7 +92,18 @@ The deterministic checks rescan hygiene, verify README and `.gitignore` evidence
 parse Python and notebook files without executing them, and run existing Python
 tests when present. They do not install dependencies, use a network, commit, push,
 or publish. `VERIFIED` and `PARTIALLY_VERIFIED` reach
-`READY_FOR_FINAL_REVIEW`; `BLOCKED` remains stopped for human action.
+`READY_FOR_FINAL_REVIEW`; `BLOCKED` remains stopped for human action. At final
+review, the guided command shows the validation outcome, unresolved concerns,
+GitHub target, visibility, branch, and exact Git changes. Approval commits those
+reviewed changes and performs a normal non-force push. It creates a missing
+repository only for the authenticated GitHub user, never renames or retargets an
+existing remote without showing it in final review, and refuses forks or
+foreign/organization-owned remotes.
+
+Declining final publication with a requested repository change resumes the same
+Codex editing context. The guided prompt can also replace the confirmed R1
+repository name; it does not infer a replacement from free-form feedback. A
+blank final decline simply stops publication at `READY_FOR_FINAL_REVIEW`.
 
 Use `run start`, `run continue`, and the phase commands when you need separate,
 scriptable, debugging, or recovery steps. For example:
@@ -100,6 +111,8 @@ scriptable, debugging, or recovery steps. For example:
 ```sh
 uv run --frozen repo-curator run input <run-id>
 uv run --frozen repo-curator run show <run-id>
+uv run --frozen repo-curator run final approve <run-id>
+uv run --frozen repo-curator run final publish <run-id>
 ```
 
 For an existing run paused for worker-requested facts, continue the same interactive flow with:
@@ -115,7 +128,7 @@ uv run --frozen repo-curator run answer <run-id> authorship 'Independent work.'
 uv run --frozen repo-curator run facts <run-id>
 ```
 
-Inspection may introduce concrete `FactRequest` records. `run approval`, `run edit`, and `run final` enforce review-state boundaries. Validation creates the explicit `repository_naming` fact request, then advances `VERIFIED` and `PARTIALLY_VERIFIED` runs from `VALIDATING` to `READY_FOR_FINAL_REVIEW`; `BLOCKED` requires human action. Automatic conversion of R4 clarification signals into `FactRequest` records is deliberately deferred until real-repository evaluation data supports a policy, and `FINISHED` always requires `run final approve`.
+Inspection may introduce concrete `FactRequest` records. `run approval`, `run edit`, and `run final` enforce review-state boundaries. Validation creates the explicit `repository_naming` fact request, then advances `VERIFIED` and `PARTIALLY_VERIFIED` runs from `VALIDATING` to `READY_FOR_FINAL_REVIEW`; `BLOCKED` requires human action. Automatic conversion of R4 clarification signals into `FactRequest` records is deliberately deferred until real-repository evaluation data supports a policy. `FINISHED` requires final approval followed by a successful recorded publication.
 
 ### Deterministic routing
 
@@ -166,7 +179,7 @@ Smoke-test the scanner against this checkout with `uv run --frozen repo-curator 
 
 ## Planned direction
 
-The intended single-repository workflow next adds final-publication verification. The current CLI can perform approved, R2-limited edits and bounded deterministic validation, but does not publish a target repository.
+The current CLI completes the single-repository workflow through final publication. Future work may improve supported organization ownership paths and post-publication review.
 
 ## Documentation
 

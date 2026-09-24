@@ -3,7 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from repo_curator.models import PortfolioClassification
-from repo_curator.validation import repository_name_is_valid, validate_repository
+from repo_curator.validation import (
+    extract_repository_name_candidates,
+    repository_name_is_valid,
+    validate_repository,
+)
 from repo_curator.workflow import VerificationStatus
 
 
@@ -31,6 +35,13 @@ def test_repository_name_allows_a_hyphenated_class_slug() -> None:
     assert repository_name_is_valid("vgtu-2024-intelligent-systems")
     assert repository_name_is_valid("VGTU-2024-Intelligent-Systems")
     assert not repository_name_is_valid("vgtu-24-intelligent-systems")
+
+
+def test_repository_name_candidates_are_extracted_without_interpreting_other_feedback() -> None:
+    assert extract_repository_name_candidates(
+        "Rename the repository to vgtu-2024-intelligent-systems."
+    ) == ["vgtu-2024-intelligent-systems"]
+    assert extract_repository_name_candidates("Rename Data1.txt first.") == []
 
 
 def test_validation_is_partial_when_a_required_check_cannot_be_completed(tmp_path: Path) -> None:

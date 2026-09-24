@@ -149,6 +149,14 @@ class FinalReview(BaseModel):
     reviewed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
+class PublicationResult(BaseModel):
+    repository: str
+    branch: str
+    commit_sha: str
+    created_repository: bool
+    published_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
 class StateTransition(BaseModel):
     from_state: WorkflowState | None = None
     to_state: WorkflowState
@@ -189,6 +197,7 @@ class RepositoryRun(BaseModel):
     validation_report: ValidationReport | None = None
     validation_approval_requests: list[ApprovalRequest] = Field(default_factory=list)
     final_review: FinalReview | None = None
+    publication_result: PublicationResult | None = None
     routing_decision: RoutingDecision | None = None
     worker_runtime: WorkerRuntime | None = None
     escalations: list[EscalationRecord] = Field(default_factory=list)
@@ -260,6 +269,7 @@ TRIAGE_FACT_PROMPTS = {
         "Repo Curator will verify it and can rename the local directory only after your approval; "
         "it never changes a remote repository."
     ),
+    "github_visibility": "Choose visibility for the new GitHub repository: public or private.",
 }
 
 
@@ -279,6 +289,8 @@ def record_fact(run: RepositoryRun, key: str, value: str) -> None:
     request_keys = {request.key for request in run.pending_fact_requests}
     if key not in request_keys and key not in TRIAGE_FACT_PROMPTS:
         raise WorkflowError(f'No known fact request with key "{key}".')
+    if key == "github_visibility" and value.strip().lower() not in {"public", "private"}:
+        raise WorkflowError("GitHub visibility must be either public or private.")
     run.human_facts[key] = HumanFact(key=key, value=value)
     run.pending_fact_requests = [
         request for request in run.pending_fact_requests if request.key != key
@@ -695,6 +707,25 @@ def retry_validation(run: RepositoryRun) -> None:
     _transition(run, WorkflowState.VALIDATING, "retry_validation")
 
 
+def request_github_visibility(run: RepositoryRun) -> bool:
+    """Collect publication visibility only when a new GitHub repository is needed."""
+    _require_state(run, WorkflowState.READY_FOR_FINAL_REVIEW)
+    if "github_visibility" in run.human_facts:
+        return False
+    _add_pending_fact_requests(
+        run,
+        [
+            FactRequest(
+                key="github_visibility",
+                prompt=TRIAGE_FACT_PROMPTS["github_visibility"],
+                source="publication",
+            )
+        ],
+    )
+    _wait_for_input_if_needed(run, WorkflowState.READY_FOR_FINAL_REVIEW)
+    return True
+
+
 def mark_ready_for_final_review(run: RepositoryRun) -> None:
     """Integration seam for a future validator after it records an acceptable result."""
     _require_state(run, WorkflowState.VALIDATING)
@@ -704,7 +735,31 @@ def mark_ready_for_final_review(run: RepositoryRun) -> None:
 def approve_final_review(run: RepositoryRun, notes: str | None = None) -> None:
     _require_state(run, WorkflowState.READY_FOR_FINAL_REVIEW)
     run.final_review = FinalReview(approved=True, notes=notes)
-    _transition(run, WorkflowState.FINISHED, "approve_final_github_review")
+    _touch(run)
+
+
+def reject_final_review(run: RepositoryRun, notes: str | None = None) -> None:
+    _require_state(run, WorkflowState.READY_FOR_FINAL_REVIEW)
+    run.final_review = FinalReview(approved=False, notes=notes)
+    _touch(run)
+
+
+def request_final_review_changes(run: RepositoryRun, notes: str) -> None:
+    """Return to the persisted editing context when final review finds repository work."""
+    _require_state(run, WorkflowState.READY_FOR_FINAL_REVIEW)
+    if not notes.strip():
+        raise WorkflowError("Requested final-review changes must be described.")
+    run.final_review = FinalReview(approved=False, notes=notes.strip())
+    run.edit_review = ReviewDecision(outcome="changes_requested", notes=notes.strip())
+    _transition(run, WorkflowState.EDITING, "request_final_review_changes")
+
+
+def finish_publication(run: RepositoryRun, result: PublicationResult) -> None:
+    _require_state(run, WorkflowState.READY_FOR_FINAL_REVIEW)
+    if run.final_review is None or not run.final_review.approved:
+        raise WorkflowError("Explicit final review approval is required before publication can finish.")
+    run.publication_result = result
+    _transition(run, WorkflowState.FINISHED, "complete_github_publication")
 
 
 def _add_pending_fact_requests(run: RepositoryRun, requests: list[FactRequest]) -> None:

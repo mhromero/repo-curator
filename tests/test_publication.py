@@ -1,0 +1,141 @@
+from __future__ import annotations
+
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+from repo_curator.publication import GitHubCliPublisher, PublicationError, PublicationInputRequired
+
+
+class FakeRunner:
+    def __init__(self, responses: dict[tuple[str, ...], list[tuple[int, str, str]]]) -> None:
+        self.responses = responses
+        self.calls: list[tuple[str, ...]] = []
+
+    def __call__(self, command: list[str], _path: Path | None):
+        if command[0] == "git":
+            key = ("git", *command[3:])
+        else:
+            key = tuple(command)
+        self.calls.append(key)
+        queue = self.responses.get(key)
+        if queue is None and key[:3] == ("gh", "repo", "create"):
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+        if not queue:
+            raise AssertionError(f"Unexpected command: {key}")
+        code, stdout, stderr = queue.pop(0)
+        return SimpleNamespace(returncode=code, stdout=stdout, stderr=stderr)
+
+
+def test_publisher_creates_confirmed_personal_repository_then_non_force_pushes(tmp_path: Path) -> None:
+    runner = FakeRunner(
+        _new_repository_responses(
+            status=[(0, " M README.md\n", ""), (0, " M README.md\n", "")]
+        )
+    )
+    publisher = GitHubCliPublisher(runner=runner)
+
+    plan = publisher.prepare(tmp_path, expected_name="vgtu-2024-intelligent-systems", visibility="public")
+    result = publisher.publish(plan)
+
+    assert result.repository == "maria/vgtu-2024-intelligent-systems"
+    assert result.created_repository is True
+    assert ("gh", "repo", "create", "maria/vgtu-2024-intelligent-systems", "--public", "--source", str(tmp_path.resolve()), "--remote", "origin") in runner.calls
+    assert ("git", "push", "origin", "HEAD:refs/heads/main") in runner.calls
+    assert all("--force" not in command for command in runner.calls)
+
+
+def test_publisher_requires_visibility_before_creating_a_new_repository(tmp_path: Path) -> None:
+    runner = FakeRunner(_new_repository_responses(status=[(0, "", "")]))
+    publisher = GitHubCliPublisher(runner=runner)
+
+    with pytest.raises(PublicationInputRequired, match="github_visibility"):
+        publisher.prepare(tmp_path, expected_name="vgtu-2024-intelligent-systems", visibility=None)
+
+
+def test_publisher_refuses_foreign_existing_remote_before_git_mutation(tmp_path: Path) -> None:
+    responses = _existing_repository_responses(
+        remote="git@github.com:course-org/vgtu-2024-intelligent-systems.git",
+        details='{"nameWithOwner":"course-org/vgtu-2024-intelligent-systems","isFork":false,"viewerPermission":"ADMIN","visibility":"PUBLIC"}',
+    )
+    runner = FakeRunner(responses)
+    publisher = GitHubCliPublisher(runner=runner)
+
+    with pytest.raises(PublicationError, match="not owned by the authenticated GitHub user"):
+        publisher.prepare(tmp_path, expected_name="vgtu-2024-intelligent-systems", visibility=None)
+
+    assert not any(command[:2] == ("git", "add") for command in runner.calls)
+
+
+def test_publisher_renames_owned_remote_only_in_the_approved_publish_step(tmp_path: Path) -> None:
+    remote = "git@github.com:maria/IS_Labs.git"
+    details = '{"nameWithOwner":"maria/IS_Labs","isFork":false,"viewerPermission":"ADMIN","visibility":"PUBLIC"}'
+    runner = FakeRunner(
+        {
+            ("git", "rev-parse", "--is-inside-work-tree"): [(0, "true\n", ""), (0, "true\n", "")],
+            ("git", "branch", "--show-current"): [(0, "main\n", ""), (0, "main\n", "")],
+            ("gh", "auth", "status", "--hostname", "github.com"): [(0, "", ""), (0, "", "")],
+            ("gh", "api", "user", "--jq", ".login"): [(0, "maria\n", ""), (0, "maria\n", "")],
+            ("git", "status", "--porcelain=v1"): [(0, "", ""), (0, "", "")],
+            ("git", "remote", "get-url", "origin"): [(0, remote + "\n", ""), (0, remote + "\n", "")],
+            ("gh", "repo", "view", "maria/IS_Labs", "--json", "nameWithOwner,isFork,viewerPermission,visibility"): [(0, details, ""), (0, details, "")],
+            ("git", "rev-parse", "HEAD"): [(0, "abc123\n", "")],
+            ("gh", "repo", "rename", "vgtu-2024-intelligent-systems", "--repo", "maria/IS_Labs"): [(0, "", "")],
+            ("git", "remote", "set-url", "origin", "git@github.com:maria/vgtu-2024-intelligent-systems.git"): [(0, "", "")],
+            ("git", "push", "origin", "HEAD:refs/heads/main"): [(0, "", "")],
+        }
+    )
+    publisher = GitHubCliPublisher(runner=runner)
+
+    plan = publisher.prepare(tmp_path, expected_name="vgtu-2024-intelligent-systems", visibility=None)
+    assert plan.rename_existing_repository is True
+    assert not any(command[:3] == ("gh", "repo", "rename") for command in runner.calls)
+
+    result = publisher.publish(plan)
+
+    assert result.repository == "maria/vgtu-2024-intelligent-systems"
+    assert ("gh", "repo", "rename", "vgtu-2024-intelligent-systems", "--repo", "maria/IS_Labs") in runner.calls
+    assert ("git", "remote", "set-url", "origin", "git@github.com:maria/vgtu-2024-intelligent-systems.git") in runner.calls
+
+
+def test_publisher_refuses_to_commit_when_worktree_changes_after_final_review(tmp_path: Path) -> None:
+    runner = FakeRunner(
+        _new_repository_responses(
+            status=[(0, " M README.md\n", ""), (0, "?? surprise.txt\n", "")]
+        )
+    )
+    publisher = GitHubCliPublisher(runner=runner)
+    plan = publisher.prepare(tmp_path, expected_name="vgtu-2024-intelligent-systems", visibility="private")
+
+    with pytest.raises(PublicationError, match="changed after final review"):
+        publisher.publish(plan)
+
+    assert not any(command[:2] == ("git", "add") for command in runner.calls)
+
+
+def _new_repository_responses(*, status: list[tuple[int, str, str]]) -> dict[tuple[str, ...], list[tuple[int, str, str]]]:
+    return {
+        ("git", "rev-parse", "--is-inside-work-tree"): [(0, "true\n", ""), (0, "true\n", "")],
+        ("git", "branch", "--show-current"): [(0, "main\n", ""), (0, "main\n", "")],
+        ("gh", "auth", "status", "--hostname", "github.com"): [(0, "", ""), (0, "", "")],
+        ("gh", "api", "user", "--jq", ".login"): [(0, "maria\n", ""), (0, "maria\n", "")],
+        ("git", "status", "--porcelain=v1"): status,
+        ("git", "remote", "get-url", "origin"): [(2, "", "no such remote"), (2, "", "no such remote")],
+        ("git", "add", "-A"): [(0, "", "")],
+        ("git", "commit", "-m", "Prepare repository for publication"): [(0, "", "")],
+        ("git", "rev-parse", "HEAD"): [(0, "abc123\n", "")],
+        ("git", "push", "origin", "HEAD:refs/heads/main"): [(0, "", "")],
+    }
+
+
+def _existing_repository_responses(*, remote: str, details: str) -> dict[tuple[str, ...], list[tuple[int, str, str]]]:
+    return {
+        ("git", "rev-parse", "--is-inside-work-tree"): [(0, "true\n", "")],
+        ("git", "branch", "--show-current"): [(0, "main\n", "")],
+        ("gh", "auth", "status", "--hostname", "github.com"): [(0, "", "")],
+        ("gh", "api", "user", "--jq", ".login"): [(0, "maria\n", "")],
+        ("git", "status", "--porcelain=v1"): [(0, "", "")],
+        ("git", "remote", "get-url", "origin"): [(0, remote + "\n", "")],
+        ("gh", "repo", "view", "course-org/vgtu-2024-intelligent-systems", "--json", "nameWithOwner,isFork,viewerPermission,visibility"): [(0, details, "")],
+    }

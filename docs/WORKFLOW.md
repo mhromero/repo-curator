@@ -1,6 +1,6 @@
 # Workflow
 
-The implemented CLI supports offline scanning, TypeSafe triage, persisted R5 human-review gates, deterministic R6 initial routing, R7/R8 inspection and approved editing, and deterministic validation. Publishing is not implemented.
+The implemented CLI supports offline scanning, TypeSafe triage, persisted R5 human-review gates, deterministic R6 initial routing, R7/R8 inspection and approved editing, deterministic validation, and final GitHub publication after explicit review.
 
 ## Principle
 
@@ -70,18 +70,27 @@ The worker may reason and edit, but the human controls factual claims, risky cha
    repository name in the R1 `uni-year-class` format before validating; it never
    invents the values. If that name differs from the local directory, the guided
    flow requires a separate persisted approval before renaming that local directory;
-   it never renames a remote repository. `VERIFIED` and `PARTIALLY_VERIFIED` enter
+   it never renames a remote repository during validation. `VERIFIED` and `PARTIALLY_VERIFIED` enter
    `READY_FOR_FINAL_REVIEW`; `BLOCKED` stops for human action.
 
 10. DIAGNOSE, if needed
    The same Codex context reasons about validation failures.
    New risky fixes return to human approval.
 
-11. FINAL GITHUB REVIEW
-    Human reviews the published repository.
+11. FINAL GITHUB REVIEW AND PUBLICATION
+    The guided CLI verifies authenticated GitHub access, renders the target,
+    visibility, branch, validation outcome, and reviewed Git changes, then asks
+    for explicit approval. It commits reviewed changes and performs a normal
+    non-force push only after approval. When an authenticated personal `origin`
+    has the old local name, the review also shows the exact remote rename before
+    it can occur.
+
+    A final-review decline with requested changes returns to `EDITING` and resumes
+    the existing Codex context. A decline without requested changes remains at
+    `READY_FOR_FINAL_REVIEW` and makes no Git or GitHub changes.
 
 12. FINISHED
-    Only explicit final approval closes the run.
+    Final approval plus a successful recorded publication closes the run.
 ```
 
 ## Implemented R5 state handling
@@ -119,7 +128,8 @@ stays in `INSPECTING` for retry. The state functions and CLI enforce these bound
 - accepted edit reviews lead to `VALIDATING`, never directly to completion;
 - deterministic validation sends `VERIFIED` and `PARTIALLY_VERIFIED` to
   `READY_FOR_FINAL_REVIEW`, while `BLOCKED` requires human action;
-- only explicit `run final approve` moves `READY_FOR_FINAL_REVIEW` to `FINISHED`.
+- final approval records authority while the run remains `READY_FOR_FINAL_REVIEW`;
+  only a successful recorded publication moves it to `FINISHED`.
 
 R5 supplies the persisted state, human facts, and approval boundaries used by R7/R8;
 the deterministic validator records a structured validation report through that

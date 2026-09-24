@@ -5,27 +5,61 @@ import json
 
 from typer.testing import CliRunner
 
-from repo_curator.cli import _format_git_status_line, app
+from repo_curator.cli import (
+    _format_git_status_line,
+    _prompt_updated_repository_name,
+    _retire_resolved_local_naming_concerns,
+    app,
+)
 from repo_curator.models import (
     ChoiceJudgment,
     TriageClarifications,
     TriageJudgments,
     TriageResult,
 )
+from repo_curator.publication import PublicationInputRequired, PublicationPlan
 from repo_curator.scanner import scan_repository
 from repo_curator.run_store import RunStore
 from repo_curator.workflow import (
     FactRequest,
+    EditReport,
     HumanFact,
     InspectionReport,
     PortfolioClassification,
+    PublicationResult,
     RepositoryRun,
     ValidationReport,
     VerificationStatus,
     WorkflowState,
     begin_inspection,
     record_inspection_report,
+    record_validation_report,
 )
+
+
+class _FinalReviewNoopPublisher:
+    """Keep pre-publication workflow tests offline after validation reaches final review."""
+
+    def __init__(self, **_kwargs) -> None:
+        pass
+
+    def prepare(self, path: Path, *, expected_name: str, visibility: str | None):
+        return PublicationPlan(
+            repository_path=path.resolve(),
+            owner="maria",
+            name=expected_name,
+            branch="main",
+            visibility=visibility or "public",
+            remote_name=None,
+            create_repository=True,
+            existing_repository_name=None,
+            rename_existing_repository=False,
+            existing_remote_url=None,
+            worktree_status=(),
+        )
+
+    def publish(self, _plan: PublicationPlan) -> PublicationResult:
+        raise AssertionError("Publication must not run when final review is declined.")
 
 
 def test_run_cli_persists_classification_and_shows_triage_signals(
@@ -79,6 +113,72 @@ def test_git_status_is_rendered_in_plain_language() -> None:
     assert _format_git_status_line("?? README.md") == "Untracked: README.md"
     assert _format_git_status_line(" M README.md") == "Modified: README.md"
     assert _format_git_status_line("A  .gitignore") == "Added to index: .gitignore"
+
+
+def test_resolved_local_naming_concern_is_not_carried_into_final_review(tmp_path: Path) -> None:
+    repository = tmp_path / "vgtu-2024-intelligent-systems"
+    repository.mkdir()
+    profile = scan_repository(repository).repository_profile
+    run = RepositoryRun(
+        id="e" * 32,
+        repository_profile=profile,
+        human_facts={
+            "repository_naming": HumanFact(
+                key="repository_naming", value="vgtu-2024-intelligent-systems"
+            )
+        },
+        edit_report=EditReport(
+            unresolved_concerns=[
+                "The repository remains named `vgtu-2024-intellignt-systems` locally and still uses the existing Git remote.",
+                "A separate concern remains.",
+            ]
+        ),
+        validation_report=ValidationReport(
+            verification_status=VerificationStatus.PARTIALLY_VERIFIED,
+            summary="One concern remains.",
+            unresolved_concerns=[
+                "The repository remains named `vgtu-2024-intellignt-systems` locally and still uses the existing Git remote."
+            ],
+        ),
+    )
+
+    assert _retire_resolved_local_naming_concerns(run) is True
+    assert run.edit_report is not None
+    assert run.edit_report.unresolved_concerns == ["A separate concern remains."]
+    assert run.validation_report is not None
+    assert run.validation_report.unresolved_concerns == []
+
+
+def test_final_revision_confirms_one_name_mentioned_in_feedback(monkeypatch, tmp_path: Path) -> None:
+    profile = scan_repository(tmp_path).repository_profile
+    run = RepositoryRun(
+        id="d" * 32,
+        repository_profile=profile,
+        human_facts={
+            "repository_naming": HumanFact(key="repository_naming", value="vgtu-2024-old-name")
+        },
+    )
+    monkeypatch.setattr("repo_curator.cli.typer.confirm", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(
+        "repo_curator.cli.typer.prompt",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("manual entry should not be needed")),
+    )
+
+    assert _prompt_updated_repository_name(
+        run,
+        "Rename Data1.txt to data1.txt and rename the repository to vgtu-2024-intelligent-systems",
+    ) == "vgtu-2024-intelligent-systems"
+
+
+def test_final_revision_does_not_ask_about_naming_when_feedback_has_no_name(monkeypatch, tmp_path: Path) -> None:
+    profile = scan_repository(tmp_path).repository_profile
+    run = RepositoryRun(id="e" * 32, repository_profile=profile)
+    monkeypatch.setattr(
+        "repo_curator.cli.typer.prompt",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("no name prompt expected")),
+    )
+
+    assert _prompt_updated_repository_name(run, "Rename Data1.txt to data1.txt.") is None
 
 
 def test_inspection_execute_records_worker_report_and_thread(
@@ -302,6 +402,7 @@ def test_guided_run_completes_approved_edit_and_resumes_by_repository_path(
         ),
     )
     monkeypatch.setenv("FAKE_CODEX_EDIT_WRITE", "1")
+    monkeypatch.setattr("repo_curator.cli.GitHubCliPublisher", _FinalReviewNoopPublisher)
     executable = _fake_codex(tmp_path)
     state_root = tmp_path / "state"
     runner = CliRunner()
@@ -316,7 +417,7 @@ def test_guided_run_completes_approved_edit_and_resumes_by_repository_path(
             "--codex-bin",
             str(executable),
         ],
-        input="B\ny\ny\ny\nuni-2026-class\ny\n",
+        input="B\ny\ny\ny\nuni-2026-class\ny\nn\n\n",
     )
 
     run = RunStore(state_root).latest_active_for_repository(repository)
@@ -335,15 +436,49 @@ def test_guided_run_completes_approved_edit_and_resumes_by_repository_path(
     assert run.worker_runtime.edit_attempts == 1
     assert (repository / "README.md").read_text(encoding="utf-8") == "# Updated by fake Codex\n"
 
+    class FakePublisher:
+        def __init__(self, **_kwargs) -> None:
+            pass
+
+        def prepare(self, path: Path, *, expected_name: str, visibility: str | None):
+            if visibility is None:
+                raise PublicationInputRequired("github_visibility")
+            return PublicationPlan(
+                repository_path=path.resolve(),
+                owner="maria",
+                name=expected_name,
+                branch="main",
+                visibility=visibility,
+                remote_name=None,
+                create_repository=True,
+                existing_repository_name=None,
+                rename_existing_repository=False,
+                existing_remote_url=None,
+                worktree_status=(),
+            )
+
+        def publish(self, plan: PublicationPlan) -> PublicationResult:
+            return PublicationResult(
+                repository=plan.repository,
+                branch=plan.branch,
+                commit_sha="abc123",
+                created_repository=True,
+            )
+
+    monkeypatch.setattr("repo_curator.cli.GitHubCliPublisher", FakePublisher)
+
     resumed = runner.invoke(
         app,
         ["run", str(repository), "--state-root", str(state_root), "--codex-bin", str(executable)],
+        input="public\ny\ny\n",
     )
 
     assert resumed.exit_code == 0
     assert "Resuming run for" in resumed.stdout
     assert "Scanning..." not in resumed.stdout
-    assert "READY_FOR_FINAL_REVIEW" in resumed.stdout
+    assert "Final publication review" in resumed.stdout
+    assert "State: FINISHED" in resumed.stdout
+    assert RunStore(state_root).load(run.id).state == WorkflowState.FINISHED
 
 
 def test_guided_run_renames_local_repository_only_after_explicit_approval(
@@ -358,6 +493,7 @@ def test_guided_run_renames_local_repository_only_after_explicit_approval(
     monkeypatch.setattr("repo_curator.cli.scan_repository", lambda _path: scan_result)
     monkeypatch.setattr("repo_curator.cli.triage_summary", lambda *_args, **_kwargs: triage_result)
     monkeypatch.setenv("FAKE_CODEX_EDIT_REPORT", json.dumps({"modified_files": ["README.md"]}))
+    monkeypatch.setattr("repo_curator.cli.GitHubCliPublisher", _FinalReviewNoopPublisher)
     executable = _fake_codex(tmp_path)
     state_root = tmp_path / "state"
     runner = CliRunner()
@@ -372,7 +508,7 @@ def test_guided_run_renames_local_repository_only_after_explicit_approval(
             "--codex-bin",
             str(executable),
         ],
-        input="B\ny\ny\ny\nuni-2026-class\ny\ny\n",
+        input="B\ny\ny\ny\nuni-2026-class\ny\ny\nn\n\n",
     )
 
     renamed_repository = tmp_path / "uni-2026-class"
@@ -394,6 +530,7 @@ def test_guided_run_renames_local_repository_only_after_explicit_approval(
 
 def test_guided_blocked_naming_mismatch_offers_direct_rename_without_retry_prompt(
     tmp_path: Path,
+    monkeypatch,
 ) -> None:
     repository = tmp_path / "IS_Labs"
     repository.mkdir()
@@ -417,12 +554,13 @@ def test_guided_blocked_naming_mismatch_offers_direct_rename_without_retry_promp
     )
     state_root = tmp_path / "state"
     RunStore(state_root).create(run)
+    monkeypatch.setattr("repo_curator.cli.GitHubCliPublisher", _FinalReviewNoopPublisher)
     runner = CliRunner()
 
     result = runner.invoke(
         app,
         ["run", str(repository), "--state-root", str(state_root)],
-        input="y\n",
+        input="y\nn\n\n",
     )
 
     renamed_repository = tmp_path / "vgtu-2024-intelligent-systems"
@@ -434,6 +572,190 @@ def test_guided_blocked_naming_mismatch_offers_direct_rename_without_retry_promp
     assert renamed_repository.is_dir()
     assert not repository.exists()
     assert saved_run.state == WorkflowState.READY_FOR_FINAL_REVIEW
+
+
+def test_guided_final_review_collects_visibility_then_publishes_after_explicit_approval(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repository = tmp_path / "uni-2026-class"
+    repository.mkdir()
+    (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
+    profile = scan_repository(repository).repository_profile
+    run = RepositoryRun(
+        id="b" * 32,
+        repository_profile=profile,
+        state=WorkflowState.READY_FOR_FINAL_REVIEW,
+        portfolio_classification=PortfolioClassification.B,
+        human_facts={
+            "repository_naming": HumanFact(key="repository_naming", value="uni-2026-class")
+        },
+        validation_report=ValidationReport(
+            verification_status=VerificationStatus.PARTIALLY_VERIFIED,
+            summary="Some runtime checks were not practical.",
+        ),
+    )
+    state_root = tmp_path / "state"
+    RunStore(state_root).create(run)
+
+    class FakePublisher:
+        def __init__(self, **_kwargs) -> None:
+            pass
+
+        def prepare(self, path: Path, *, expected_name: str, visibility: str | None):
+            if visibility is None:
+                raise PublicationInputRequired("github_visibility")
+            return PublicationPlan(
+                repository_path=path.resolve(),
+                owner="maria",
+                name=expected_name,
+                branch="main",
+                visibility=visibility,
+                remote_name=None,
+                create_repository=True,
+                existing_repository_name=None,
+                rename_existing_repository=False,
+                existing_remote_url=None,
+                worktree_status=(" M README.md",),
+            )
+
+        def publish(self, plan: PublicationPlan) -> PublicationResult:
+            return PublicationResult(
+                repository=plan.repository,
+                branch=plan.branch,
+                commit_sha="abc123",
+                created_repository=True,
+            )
+
+    monkeypatch.setattr("repo_curator.cli.GitHubCliPublisher", FakePublisher)
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        ["run", str(repository), "--state-root", str(state_root)],
+        input="public\ny\ny\n",
+    )
+
+    saved_run = RunStore(state_root).load(run.id)
+    assert result.exit_code == 0
+    assert "github_visibility:" in result.stdout
+    assert "Final publication review" in result.stdout
+    assert "GitHub repository: maria/uni-2026-class" in result.stdout
+    assert "Approve publication to this GitHub repository?" in result.stdout
+    assert "Final approval recorded. Publishing the reviewed repository..." in result.stdout
+    assert "Published maria/uni-2026-class branch main at abc123." in result.stdout
+    assert saved_run.state == WorkflowState.FINISHED
+    assert saved_run.final_review is not None and saved_run.final_review.approved is True
+    assert saved_run.publication_result is not None
+
+
+def test_guided_validation_continues_directly_to_final_publication_review(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repository = tmp_path / "uni-2026-class"
+    repository.mkdir()
+    (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
+    profile = scan_repository(repository).repository_profile
+    run = RepositoryRun(
+        id="f" * 32,
+        repository_profile=profile,
+        state=WorkflowState.VALIDATING,
+        portfolio_classification=PortfolioClassification.B,
+        human_facts={
+            "repository_naming": HumanFact(key="repository_naming", value="uni-2026-class")
+        },
+    )
+    state_root = tmp_path / "state"
+    RunStore(state_root).create(run)
+
+    def complete_validation(store, active_run):
+        report = ValidationReport(
+            verification_status=VerificationStatus.PARTIALLY_VERIFIED,
+            summary="Validation completed.",
+        )
+        record_validation_report(active_run, report)
+        store.save(active_run)
+        return report
+
+    class FakePublisher:
+        def __init__(self, **_kwargs) -> None:
+            pass
+
+        def prepare(self, path: Path, *, expected_name: str, visibility: str | None):
+            if visibility is None:
+                raise PublicationInputRequired("github_visibility")
+            return PublicationPlan(
+                repository_path=path.resolve(),
+                owner="maria",
+                name=expected_name,
+                branch="main",
+                visibility=visibility,
+                remote_name=None,
+                create_repository=True,
+                existing_repository_name=None,
+                rename_existing_repository=False,
+                existing_remote_url=None,
+                worktree_status=(),
+            )
+
+        def publish(self, plan: PublicationPlan) -> PublicationResult:
+            return PublicationResult(
+                repository=plan.repository,
+                branch=plan.branch,
+                commit_sha="abc123",
+                created_repository=True,
+            )
+
+    monkeypatch.setattr("repo_curator.cli._execute_validation", complete_validation)
+    monkeypatch.setattr("repo_curator.cli.GitHubCliPublisher", FakePublisher)
+
+    result = CliRunner().invoke(
+        app,
+        ["run", str(repository), "--state-root", str(state_root)],
+        input="public\ny\ny\n",
+    )
+
+    assert result.exit_code == 0
+    assert "Verification outcome: PARTIALLY_VERIFIED" in result.stdout
+    assert "Final publication review" in result.stdout
+    assert "Approve publication to this GitHub repository?" in result.stdout
+    assert RunStore(state_root).load(run.id).state == WorkflowState.FINISHED
+
+
+def test_low_level_publication_refuses_before_approval(tmp_path: Path, monkeypatch) -> None:
+    repository = tmp_path / "uni-2026-class"
+    repository.mkdir()
+    profile = scan_repository(repository).repository_profile
+    run = RepositoryRun(
+        id="c" * 32,
+        repository_profile=profile,
+        state=WorkflowState.READY_FOR_FINAL_REVIEW,
+        portfolio_classification=PortfolioClassification.B,
+        human_facts={
+            "repository_naming": HumanFact(key="repository_naming", value="uni-2026-class")
+        },
+    )
+    state_root = tmp_path / "state"
+    RunStore(state_root).create(run)
+    calls: list[object] = []
+
+    class FakePublisher:
+        def __init__(self, **_kwargs) -> None:
+            calls.append("constructed")
+
+        def prepare(self, *_args, **_kwargs):
+            calls.append("prepare")
+            raise AssertionError("Publication preflight should not run before approval")
+
+    monkeypatch.setattr("repo_curator.cli.GitHubCliPublisher", FakePublisher)
+    result = CliRunner().invoke(
+        app,
+        ["run", "final", "publish", run.id, "--state-root", str(state_root)],
+    )
+
+    assert result.exit_code == 1
+    assert "Explicit final review approval is required" in result.stderr
+    assert calls == ["constructed"]
 
 
 def test_guided_run_renders_r2_approval_before_editing(tmp_path: Path, monkeypatch) -> None:
@@ -462,6 +784,7 @@ def test_guided_run_renders_r2_approval_before_editing(tmp_path: Path, monkeypat
         ),
     )
     monkeypatch.setenv("FAKE_CODEX_EDIT_REPORT", json.dumps({"modified_files": ["README.md"]}))
+    monkeypatch.setattr("repo_curator.cli.GitHubCliPublisher", _FinalReviewNoopPublisher)
     executable = _fake_codex(tmp_path)
     state_root = tmp_path / "state"
     runner = CliRunner()
@@ -476,7 +799,7 @@ def test_guided_run_renders_r2_approval_before_editing(tmp_path: Path, monkeypat
             "--codex-bin",
             str(executable),
         ],
-        input="B\ny\ny\ny\ny\nuni-2026-class\ny\n",
+        input="B\ny\ny\ny\ny\nuni-2026-class\ny\nn\n\n",
     )
 
     assert result.exit_code == 0
@@ -515,6 +838,7 @@ def test_guided_rejection_collects_an_explanation_for_the_worker(tmp_path: Path,
     )
     monkeypatch.setenv("FAKE_CODEX_RESUMED_REPORT", json.dumps({"summary": "Revised plan."}))
     monkeypatch.setenv("FAKE_CODEX_EDIT_REPORT", json.dumps({"modified_files": ["README.md"]}))
+    monkeypatch.setattr("repo_curator.cli.GitHubCliPublisher", _FinalReviewNoopPublisher)
     executable = _fake_codex(tmp_path)
     state_root = tmp_path / "state"
     runner = CliRunner()
@@ -529,7 +853,7 @@ def test_guided_rejection_collects_an_explanation_for_the_worker(tmp_path: Path,
             "--codex-bin",
             str(executable),
         ],
-        input="B\ny\ny\nn\nKeep the existing import paths.\ny\ny\nuni-2026-class\ny\n",
+        input="B\ny\ny\nn\nKeep the existing import paths.\ny\ny\nuni-2026-class\ny\nn\n\n",
     )
 
     assert result.exit_code == 0
@@ -560,6 +884,7 @@ def test_guided_edit_rejection_requests_a_revision_in_the_same_worker_context(
         ),
     )
     executable = _fake_codex(tmp_path)
+    monkeypatch.setattr("repo_curator.cli.GitHubCliPublisher", _FinalReviewNoopPublisher)
     state_root = tmp_path / "state"
     runner = CliRunner()
 
@@ -573,7 +898,7 @@ def test_guided_edit_rejection_requests_a_revision_in_the_same_worker_context(
             "--codex-bin",
             str(executable),
         ],
-        input="B\ny\ny\nn\nKeep the existing README heading.\ny\nuni-2026-class\ny\n",
+        input="B\ny\ny\nn\nKeep the existing README heading.\ny\nuni-2026-class\ny\nn\n\n",
     )
 
     run = RunStore(state_root).latest_active_for_repository(repository)
