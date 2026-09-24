@@ -12,7 +12,9 @@ from repo_curator.models import (
     TriageUsage,
 )
 from repo_curator.run_store import RunStore
+from repo_curator.routing import RoutingConfig
 from repo_curator.scanner import scan_repository
+from repo_curator.worker import build_edit_request, build_inspection_request
 from repo_curator.workflow import (
     ApprovalRequest,
     ApprovalStatus,
@@ -31,6 +33,8 @@ from repo_curator.workflow import (
     record_edit_report,
     record_fact,
     record_inspection_report,
+    request_inspection_changes,
+    route_run,
     set_portfolio_classification,
     start_run,
 )
@@ -79,6 +83,7 @@ def test_inspection_facts_resume_inspection_without_reasking_confirmed_facts(
 ) -> None:
     profile, triage_result = _scan_and_triage(tmp_path)
     run = _triaged_run(profile, triage_result)
+    route_run(run, RoutingConfig.from_environment())
     begin_inspection(run)
 
     record_inspection_report(
@@ -131,6 +136,63 @@ def test_r2_approval_boundary_requires_every_request_to_be_approved(tmp_path: Pa
     assert second_request.decision_notes == "Keep it for now."
     with pytest.raises(WorkflowError, match="require a revised inspection report"):
         approve_inspection(run)
+
+
+def test_edit_report_uses_existing_r2_approval_boundary(tmp_path: Path) -> None:
+    profile, triage_result = _scan_and_triage(tmp_path)
+    run = _triaged_run(profile, triage_result)
+    route_run(run, RoutingConfig.from_environment())
+    begin_inspection(run)
+    record_inspection_report(run, InspectionReport(summary="Inspection complete."))
+    approve_inspection(run)
+    request = _approval_request("Remove a generated model artifact.")
+
+    record_edit_report(
+        run,
+        EditReport(
+            modified_files=["README.md"],
+            approval_requests=[request],
+        ),
+    )
+
+    assert run.state == WorkflowState.WAITING_APPROVAL
+    assert run.pending_approval_requests == [request]
+
+    decide_approval(run, request.id, True)
+
+    assert run.state == WorkflowState.EDITING
+    assert request.status == ApprovalStatus.APPROVED
+    edit_request = build_edit_request(run)
+    assert [item.id for item in edit_request.approved_change_requests] == [request.id]
+
+
+def test_rejected_inspection_approval_notes_reach_the_resumed_worker(tmp_path: Path) -> None:
+    profile, triage_result = _scan_and_triage(tmp_path)
+    run = _triaged_run(profile, triage_result)
+    route_run(run, RoutingConfig.from_environment())
+    begin_inspection(run)
+    request = _approval_request("Move the package into src/.")
+    record_inspection_report(
+        run,
+        InspectionReport(summary="Inspection complete.", approval_requests=[request]),
+    )
+    approve_inspection(run)
+    decide_approval(run, request.id, False, "Keep the existing import paths.")
+
+    request_inspection_changes(
+        run,
+        "Do not make 'Move the package into src/.': Keep the existing import paths.",
+    )
+    inspection_request = build_inspection_request(run)
+
+    assert (
+        inspection_request.revision_notes
+        == "Do not make 'Move the package into src/.': Keep the existing import paths."
+    )
+    assert (
+        inspection_request.prompt_context()["requested_inspection_revision"]
+        == inspection_request.revision_notes
+    )
 
 
 def test_finished_requires_explicit_final_human_approval(tmp_path: Path) -> None:

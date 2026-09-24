@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import subprocess
 from typing import Annotated, Any
 
 import typer
@@ -20,10 +21,13 @@ from .workflow import (
     approve_final_review,
     approve_inspection,
     begin_inspection,
+    begin_worker_editing,
     begin_worker_inspection,
     decide_approval,
     record_worker_inspection_failure,
     record_worker_inspection_success,
+    record_worker_editing_failure,
+    record_worker_editing_success,
     record_edit_report,
     record_fact,
     record_inspection_report,
@@ -33,10 +37,28 @@ from .workflow import (
     set_portfolio_classification,
     start_run,
 )
-from .worker import WorkerRuntimeError, build_inspection_request
+from .worker import WorkerRuntimeError, build_edit_request, build_inspection_request
+
+class GuidedRunGroup(typer.core.TyperGroup):
+    """Treat an otherwise unknown first token as the guided repository path."""
+
+    def get_command(self, context: typer.Context, command_name: str):
+        command = super().get_command(context, command_name)
+        if command is not None or command_name.startswith("-"):
+            return command
+        context.meta["guided_repository_path"] = command_name
+        return super().get_command(context, "_guided")
+
 
 app = typer.Typer(no_args_is_help=True, help="Inspect a repository without modifying it.")
-run_app = typer.Typer(no_args_is_help=True, help="Manage a persisted human-review workflow run.")
+run_app = typer.Typer(
+    cls=GuidedRunGroup,
+    no_args_is_help=True,
+    help=(
+        "Guide repository curation or manage a persisted workflow run. "
+        "Normal use: repo-curator run <repository>."
+    ),
+)
 inspection_app = typer.Typer(no_args_is_help=True, help="Manage inspection review.")
 edit_app = typer.Typer(no_args_is_help=True, help="Manage edit review.")
 approval_app = typer.Typer(no_args_is_help=True, help="Resolve R2 approval requests.")
@@ -185,6 +207,40 @@ StateRootOption = Annotated[
         help="Directory containing run records; defaults to ~/.repo-curator/runs.",
     ),
 ]
+
+
+@run_app.command("_guided", hidden=True)
+def guided_run(
+    context: typer.Context,
+    model: str | None = typer.Option(
+        None,
+        "--model",
+        help="TypeSafe model or alias when starting a new run.",
+    ),
+    state_root: StateRootOption = None,
+    codex_bin: str = typer.Option("codex", "--codex-bin", help="Codex CLI executable."),
+) -> None:
+    """Run the normal human-guided workflow without exposing a run identifier."""
+    path = Path(context.meta["guided_repository_path"])
+    store = RunStore(state_root)
+    try:
+        run = store.latest_active_for_repository(path)
+        if run is None:
+            typer.echo("Scanning...")
+            scan_result = scan_repository(path)
+            typer.echo("✓ Scan complete")
+            typer.echo("Triaging...")
+            triage_result = triage_summary(scan_result.triage_summary, model=model)
+            typer.echo("✓ Triage complete")
+            run = start_run(scan_result.repository_profile, triage_result)
+            store.create(run)
+            typer.echo(f"Run: {run.id}")
+            _print_triage_clarifications(run)
+        else:
+            typer.echo(f"Resuming run for {run.repository_profile.identity.path}.")
+        _drive_guided_workflow(store, run, codex_bin)
+    except (OSError, RoutingError, TriageProviderError, ValueError, WorkflowError, WorkerRuntimeError) as error:
+        _workflow_error_and_exit(error)
 
 
 @run_app.command("start")
@@ -436,6 +492,8 @@ def inspection_approve(
     except WorkflowError as error:
         _workflow_error_and_exit(error)
     typer.echo(f"State: {run.state.value}")
+    if run.state == WorkflowState.EDITING:
+        typer.echo(f"Run `repo-curator run continue {run.id}` to start approved editing.")
 
 
 @inspection_app.command("request-changes")
@@ -452,6 +510,24 @@ def inspection_request_changes(
     except WorkflowError as error:
         _workflow_error_and_exit(error)
     typer.echo(f"State: {run.state.value}")
+
+
+@edit_app.command("execute")
+def edit_execute(
+    run_id: str = typer.Argument(..., help="Persisted run identifier."),
+    state_root: StateRootOption = None,
+    codex_bin: str = typer.Option("codex", "--codex-bin", help="Codex CLI executable."),
+) -> None:
+    store = RunStore(state_root)
+    run = _load_run_or_exit(store, run_id)
+    try:
+        result = _execute_edit(store, run, codex_bin)
+    except (ValueError, WorkflowError, WorkerRuntimeError) as error:
+        _workflow_error_and_exit(error)
+
+    typer.echo(f"Codex thread: {result.thread_id}")
+    typer.echo(f"State: {run.state.value}")
+    _print_pending_approvals(run)
 
 
 @approval_app.command("decide")
@@ -472,6 +548,8 @@ def approval_decide(
     except WorkflowError as error:
         _workflow_error_and_exit(error)
     typer.echo(f"State: {run.state.value}")
+    if run.state == WorkflowState.EDITING:
+        typer.echo(f"Run `repo-curator run continue {run.id}` to resume approved editing.")
 
 
 @edit_app.command("record")
@@ -579,7 +657,7 @@ def _execute_inspection(
         result = worker.inspect(
             request,
             resume_thread_id=resume_thread_id,
-            on_event=_print_codex_worker_event,
+            on_event=lambda event: _print_codex_worker_event(event, "inspecting"),
         )
     except WorkerRuntimeError as error:
         record_worker_inspection_failure(
@@ -605,6 +683,286 @@ def _execute_inspection(
     record_inspection_report(run, result.report)
     store.save(run)
     return result
+
+
+def _execute_edit(
+    store: RunStore,
+    run,
+    codex_bin: str,
+):
+    worker = CodexCliWorker(codex_bin)
+    if run.routing_decision is not None:
+        migrate_legacy_provider_model(run.routing_decision, RoutingConfig.from_environment())
+    begin_worker_editing(run, worker.backend)
+    request = build_edit_request(run)
+    store.save(run)
+
+    runtime = run.worker_runtime
+    assert runtime is not None and runtime.thread_id is not None
+    route = run.routing_decision
+    assert route is not None
+    typer.echo(
+        "Worker route: "
+        f"{route.model_family} ({route.provider_model}); "
+        f"reasoning effort {route.reasoning_effort.value}."
+    )
+    typer.echo(f"Resuming Codex thread {runtime.thread_id} with workspace-write access.")
+    typer.echo("Worker is applying only the approved edit scope; this may take a few minutes.")
+    try:
+        result = worker.edit(
+            request,
+            resume_thread_id=runtime.thread_id,
+            on_event=lambda event: _print_codex_worker_event(event, "editing"),
+        )
+    except WorkerRuntimeError as error:
+        record_worker_editing_failure(
+            run,
+            str(error),
+            thread_id=error.thread_id,
+            input_tokens=error.usage.input_tokens,
+            cached_input_tokens=error.usage.cached_input_tokens,
+            output_tokens=error.usage.output_tokens,
+            reasoning_output_tokens=error.usage.reasoning_output_tokens,
+        )
+        store.save(run)
+        raise
+
+    record_worker_editing_success(
+        run,
+        thread_id=result.thread_id,
+        input_tokens=result.usage.input_tokens,
+        cached_input_tokens=result.usage.cached_input_tokens,
+        output_tokens=result.usage.output_tokens,
+        reasoning_output_tokens=result.usage.reasoning_output_tokens,
+    )
+    record_edit_report(run, result.report)
+    store.save(run)
+    return result
+
+
+def _drive_guided_workflow(
+    store: RunStore,
+    run,
+    codex_bin: str,
+) -> None:
+    """Advance the normal CLI journey until this milestone's edit-review gate."""
+    while True:
+        if run.state == WorkflowState.WAITING_FOR_INPUT:
+            typer.echo("Human input is required before the workflow can continue.")
+            _print_pending_input(run)
+            if not _collect_pending_input(run):
+                typer.echo(f"State: {run.state.value}")
+                return
+            store.save(run)
+            typer.echo("Human input saved.")
+            continue
+
+        if run.state == WorkflowState.TRIAGED:
+            if run.routing_decision is None:
+                typer.echo("Selecting a worker route...")
+                decision = route_run(run, RoutingConfig.from_environment())
+                store.save(run)
+            else:
+                decision = run.routing_decision
+                typer.echo("Using the persisted worker route...")
+            typer.echo(f"Work depth: {decision.work_depth.value}")
+            typer.echo(f"Model family: {decision.model_family}")
+            typer.echo(f"Reasoning effort: {decision.reasoning_effort.value}")
+            _run_interactive_inspection_attempt(store, run, codex_bin)
+            continue
+
+        if run.state == WorkflowState.INSPECTING:
+            _run_interactive_inspection_attempt(store, run, codex_bin)
+            continue
+
+        if run.state == WorkflowState.WAITING_INSPECTION_REVIEW:
+            _review_inspection_plan(store, run)
+            continue
+
+        if run.state == WorkflowState.WAITING_APPROVAL:
+            _resolve_guided_approvals(store, run)
+            continue
+
+        if run.state == WorkflowState.EDITING:
+            _run_interactive_edit_attempt(store, run, codex_bin)
+            continue
+
+        if run.state == WorkflowState.WAITING_EDIT_REVIEW:
+            _print_edit_report(run)
+            _print_repository_change_summary(Path(run.repository_profile.identity.path))
+            typer.echo("Edits are ready for human review.")
+            typer.echo("This R8 milestone stops at WAITING_EDIT_REVIEW; validation is not run.")
+            typer.echo(f"State: {run.state.value}")
+            return
+
+        typer.echo(f"State: {run.state.value}")
+        typer.echo("This state is outside the currently implemented guided workflow.")
+        return
+
+
+def _review_inspection_plan(store: RunStore, run) -> None:
+    _print_inspection_report(run.inspection_report)
+    if run.rejected_inspection_approval_requests:
+        typer.echo("A proposed R2 action was rejected and the plan must be revised.")
+        request_inspection_changes(
+            run,
+            _rejected_inspection_notes(run)
+            or _prompt_review_notes("Describe the required plan changes"),
+        )
+    elif typer.confirm("Approve this inspection plan?", default=False):
+        approve_inspection(run)
+        typer.echo("Inspection plan approved.")
+    else:
+        request_inspection_changes(run, _prompt_review_notes("Describe the required plan changes"))
+        typer.echo("Inspection changes requested.")
+    store.save(run)
+
+
+def _resolve_guided_approvals(store: RunStore, run) -> None:
+    pending_requests = list(run.pending_approval_requests)
+    if not pending_requests:
+        raise WorkflowError("Waiting-approval state has no pending approval request.")
+    for request in pending_requests:
+        _print_approval_request(request)
+        approved = typer.confirm("Approve?", default=False)
+        notes = None
+        if not approved:
+            notes = _prompt_optional_approval_notes()
+        decide_approval(run, request.id, approved, notes)
+        typer.echo("Approved." if approved else "Rejected.")
+        store.save(run)
+
+
+def _prompt_review_notes(prompt: str) -> str:
+    while True:
+        notes = typer.prompt(prompt).strip()
+        if notes:
+            return notes
+        typer.echo("A description is required so the worker can revise the plan.", err=True)
+
+
+def _prompt_optional_approval_notes() -> str | None:
+    notes = typer.prompt(
+        "Why are you declining this change? (optional)",
+        default="",
+        show_default=False,
+    ).strip()
+    return notes or None
+
+
+def _rejected_inspection_notes(run) -> str | None:
+    notes = [
+        f"Do not make '{request.proposed_change}': {request.decision_notes}"
+        for request in run.rejected_inspection_approval_requests
+        if request.decision_notes
+    ]
+    return "\n".join(notes) or None
+
+
+def _print_inspection_report(report: InspectionReport | None) -> None:
+    if report is None:
+        raise WorkflowError("Inspection review requires an inspection report.")
+    typer.echo("Inspection")
+    typer.echo("─" * 36)
+    typer.echo(report.summary)
+    _print_report_section("Important findings", report.important_findings)
+    _print_report_section("Proposed work", report.proposed_work)
+    _print_report_section("Expected validation", report.expected_validation)
+    if report.approval_requests:
+        typer.echo("R2 changes needing a separate decision:")
+        for request in report.approval_requests:
+            if request.status.value == "pending":
+                typer.echo(f"- {request.proposed_change}")
+
+
+def _print_edit_report(run) -> None:
+    report = run.edit_report
+    if report is None:
+        raise WorkflowError("Edit review requires an edit report.")
+    typer.echo("Edit report")
+    typer.echo("─" * 36)
+    _print_report_section("Modified files", report.modified_files)
+    typer.echo()
+    _print_report_section("Removed files", report.removed_files)
+    typer.echo()
+    typer.echo(f"Source code changed: {'yes' if report.source_code_changed else 'no'}")
+    typer.echo()
+    _print_report_section("Deviations from approved plan", report.deviations_from_plan)
+    typer.echo()
+    _print_report_section("Cheap sanity checks", report.cheap_sanity_checks)
+    typer.echo()
+    _print_report_section("Unresolved concerns", report.unresolved_concerns)
+
+
+def _print_report_section(title: str, values: list[str]) -> None:
+    typer.echo(f"{title}:")
+    if values:
+        for value in values:
+            typer.echo(f"- {value}")
+    else:
+        typer.echo("- none")
+
+
+def _print_approval_request(request) -> None:
+    typer.echo("Approval required")
+    typer.echo("─" * 36)
+    typer.echo(f"Problem: {request.problem}")
+    typer.echo(f"Proposed change: {request.proposed_change}")
+    typer.echo(f"Reason: {request.reason}")
+    typer.echo(
+        "Affected files: " + (", ".join(request.affected_files) if request.affected_files else "none identified")
+    )
+    typer.echo(f"Expected behavior change: {request.behavior_impact}")
+
+
+def _print_repository_change_summary(repository_path: Path) -> None:
+    try:
+        status = subprocess.run(
+            ["git", "-C", str(repository_path), "status", "--short"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        diff_stat = subprocess.run(
+            ["git", "-C", str(repository_path), "diff", "--stat"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return
+    if status.returncode != 0:
+        return
+    typer.echo("Repository changes (Git):")
+    status_lines = status.stdout.strip().splitlines()
+    if status_lines:
+        for line in status_lines:
+            typer.echo(f"- {_format_git_status_line(line)}")
+    else:
+        typer.echo("- Git reports no working-tree changes.")
+    if diff_stat.returncode == 0 and diff_stat.stdout.strip():
+        typer.echo("Git diff summary:")
+        typer.echo(diff_stat.stdout.strip())
+
+
+def _format_git_status_line(line: str) -> str:
+    """Render Git's short-status prefixes without exposing porcelain syntax."""
+    if line.startswith("?? "):
+        return f"Untracked: {line[3:]}"
+    if len(line) < 3:
+        return line
+    staged, unstaged, path = line[0], line[1], line[3:]
+    if staged == "A":
+        return f"Added to index: {path}"
+    if staged == "D":
+        return f"Deleted from index: {path}"
+    if staged == "M":
+        return f"Modified in index: {path}"
+    if unstaged == "M":
+        return f"Modified: {path}"
+    if unstaged == "D":
+        return f"Deleted: {path}"
+    return line
 
 
 def _drive_interactive_inspection(
@@ -641,14 +999,29 @@ def _drive_interactive_inspection(
             _run_interactive_inspection_attempt(store, run, codex_bin)
             continue
 
+        if run.state == WorkflowState.EDITING:
+            _run_interactive_edit_attempt(store, run, codex_bin)
+            continue
+
         if run.state == WorkflowState.WAITING_INSPECTION_REVIEW:
             typer.echo("Inspection is ready for human review.")
             typer.echo(f"State: {run.state.value}")
             return
 
+        if run.state == WorkflowState.WAITING_APPROVAL:
+            typer.echo("Additional R2 approval is required before the workflow can continue.")
+            _print_pending_approvals(run)
+            typer.echo(f"State: {run.state.value}")
+            return
+
+        if run.state == WorkflowState.WAITING_EDIT_REVIEW:
+            typer.echo("Edits are ready for human review.")
+            typer.echo(f"State: {run.state.value}")
+            return
+
         raise WorkflowError(
             "Interactive continuation requires TRIAGED, INSPECTING, WAITING_FOR_INPUT, "
-            "or WAITING_INSPECTION_REVIEW state."
+            "EDITING, WAITING_INSPECTION_REVIEW, WAITING_APPROVAL, or WAITING_EDIT_REVIEW state."
         )
 
 
@@ -662,12 +1035,30 @@ def _run_interactive_inspection_attempt(
     typer.echo("Inspection response received.")
 
 
-def _print_codex_worker_event(event: dict[str, Any]) -> None:
+def _run_interactive_edit_attempt(
+    store: RunStore,
+    run,
+    codex_bin: str,
+) -> None:
+    result = _execute_edit(store, run, codex_bin)
+    typer.echo(f"Codex thread: {result.thread_id}")
+    typer.echo("Edit response received.")
+
+
+def _print_codex_worker_event(event: dict[str, Any], phase: str) -> None:
     if event.get("type") != "thread.started":
         return
     thread_id = event.get("thread_id")
     if isinstance(thread_id, str):
-        typer.echo(f"Connected to Codex thread {thread_id}; worker is inspecting.")
+        typer.echo(f"Connected to Codex thread {thread_id}; worker is {phase}.")
+
+
+def _print_pending_approvals(run) -> None:
+    if not run.pending_approval_requests:
+        return
+    typer.echo("Pending approvals:")
+    for request in run.pending_approval_requests:
+        typer.echo(f"- {request.id}: {request.proposed_change}")
 
 
 def _collect_pending_input(run) -> int:

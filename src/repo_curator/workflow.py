@@ -98,6 +98,7 @@ class EditReport(BaseModel):
     deviations_from_plan: list[str] = Field(default_factory=list)
     cheap_sanity_checks: list[str] = Field(default_factory=list)
     unresolved_concerns: list[str] = Field(default_factory=list)
+    approval_requests: list[ApprovalRequest] = Field(default_factory=list)
 
 
 class ReviewDecision(BaseModel):
@@ -125,6 +126,7 @@ class WorkerRuntime(BaseModel):
     provider_model: str
     reasoning_effort: str
     inspection_attempts: int = 0
+    edit_attempts: int = 0
     last_error: str | None = None
     last_started_at: datetime | None = None
     last_completed_at: datetime | None = None
@@ -161,23 +163,35 @@ class RepositoryRun(BaseModel):
 
     @property
     def pending_approval_requests(self) -> list[ApprovalRequest]:
+        return self.pending_inspection_approval_requests + self.pending_edit_approval_requests
+
+    @property
+    def pending_inspection_approval_requests(self) -> list[ApprovalRequest]:
         if self.inspection_report is None:
             return []
-        return [
-            request
-            for request in self.inspection_report.approval_requests
-            if request.status == ApprovalStatus.PENDING
-        ]
+        return _pending_approval_requests(self.inspection_report.approval_requests)
+
+    @property
+    def pending_edit_approval_requests(self) -> list[ApprovalRequest]:
+        if self.edit_report is None:
+            return []
+        return _pending_approval_requests(self.edit_report.approval_requests)
 
     @property
     def rejected_approval_requests(self) -> list[ApprovalRequest]:
+        return self.rejected_inspection_approval_requests + self.rejected_edit_approval_requests
+
+    @property
+    def rejected_inspection_approval_requests(self) -> list[ApprovalRequest]:
         if self.inspection_report is None:
             return []
-        return [
-            request
-            for request in self.inspection_report.approval_requests
-            if request.status == ApprovalStatus.REJECTED
-        ]
+        return _rejected_approval_requests(self.inspection_report.approval_requests)
+
+    @property
+    def rejected_edit_approval_requests(self) -> list[ApprovalRequest]:
+        if self.edit_report is None:
+            return []
+        return _rejected_approval_requests(self.edit_report.approval_requests)
 
 
 TRIAGE_FACT_PROMPTS = {
@@ -235,12 +249,10 @@ def begin_worker_inspection(run: RepositoryRun, backend: str) -> None:
         raise WorkflowError("A routing decision is required before launching a worker.")
     if run.state == WorkflowState.TRIAGED:
         begin_inspection(run)
-    elif run.state != WorkflowState.INSPECTING or (
-        run.inspection_report is not None and run.inspection_review is not None
-    ):
+    elif run.state != WorkflowState.INSPECTING:
         raise WorkflowError(
             "Worker inspection can only start from TRIAGED, retry an incomplete INSPECTING run, "
-            "or resume inspection after requested facts."
+            "or resume inspection after requested facts or plan changes."
         )
 
     runtime = run.worker_runtime
@@ -257,6 +269,30 @@ def begin_worker_inspection(run: RepositoryRun, backend: str) -> None:
     runtime.provider_model = run.routing_decision.provider_model
     runtime.reasoning_effort = run.routing_decision.reasoning_effort.value
     runtime.inspection_attempts += 1
+    runtime.last_error = None
+    runtime.last_started_at = datetime.now(UTC)
+    _touch(run)
+
+
+def begin_worker_editing(run: RepositoryRun, backend: str) -> None:
+    _require_state(run, WorkflowState.EDITING)
+    if run.inspection_report is None or run.inspection_review is None:
+        raise WorkflowError("An approved inspection report is required before editing.")
+    if run.inspection_review.outcome != "approved":
+        raise WorkflowError("The inspection plan must be approved before editing.")
+    if run.pending_approval_requests or run.rejected_inspection_approval_requests:
+        raise WorkflowError("All inspection approval requests must be approved before editing.")
+    runtime = _worker_runtime_or_error(run)
+    if runtime.backend != backend:
+        raise WorkflowError("The existing worker runtime uses a different backend.")
+    if runtime.thread_id is None:
+        raise WorkflowError("Editing requires the persisted inspection worker thread.")
+    if run.routing_decision is None:
+        raise WorkflowError("A routing decision is required before launching a worker.")
+
+    runtime.provider_model = run.routing_decision.provider_model
+    runtime.reasoning_effort = run.routing_decision.reasoning_effort.value
+    runtime.edit_attempts += 1
     runtime.last_error = None
     runtime.last_started_at = datetime.now(UTC)
     _touch(run)
@@ -297,6 +333,55 @@ def record_worker_inspection_success(
     reasoning_output_tokens: int | None = None,
 ) -> None:
     _require_state(run, WorkflowState.INSPECTING)
+    runtime = _worker_runtime_or_error(run)
+    runtime.thread_id = thread_id
+    runtime.last_error = None
+    runtime.last_completed_at = datetime.now(UTC)
+    _record_worker_usage(
+        runtime,
+        input_tokens=input_tokens,
+        cached_input_tokens=cached_input_tokens,
+        output_tokens=output_tokens,
+        reasoning_output_tokens=reasoning_output_tokens,
+    )
+    _touch(run)
+
+
+def record_worker_editing_failure(
+    run: RepositoryRun,
+    message: str,
+    *,
+    thread_id: str | None = None,
+    input_tokens: int | None = None,
+    cached_input_tokens: int | None = None,
+    output_tokens: int | None = None,
+    reasoning_output_tokens: int | None = None,
+) -> None:
+    _require_state(run, WorkflowState.EDITING)
+    runtime = _worker_runtime_or_error(run)
+    runtime.thread_id = thread_id or runtime.thread_id
+    runtime.last_error = message
+    runtime.last_completed_at = datetime.now(UTC)
+    _record_worker_usage(
+        runtime,
+        input_tokens=input_tokens,
+        cached_input_tokens=cached_input_tokens,
+        output_tokens=output_tokens,
+        reasoning_output_tokens=reasoning_output_tokens,
+    )
+    _touch(run)
+
+
+def record_worker_editing_success(
+    run: RepositoryRun,
+    *,
+    thread_id: str,
+    input_tokens: int | None = None,
+    cached_input_tokens: int | None = None,
+    output_tokens: int | None = None,
+    reasoning_output_tokens: int | None = None,
+) -> None:
+    _require_state(run, WorkflowState.EDITING)
     runtime = _worker_runtime_or_error(run)
     runtime.thread_id = thread_id
     runtime.last_error = None
@@ -354,10 +439,10 @@ def record_inspection_report(run: RepositoryRun, report: InspectionReport) -> No
 
 def approve_inspection(run: RepositoryRun, notes: str | None = None) -> None:
     _require_state(run, WorkflowState.WAITING_INSPECTION_REVIEW)
-    if run.rejected_approval_requests:
+    if run.rejected_inspection_approval_requests:
         raise WorkflowError("Rejected approval requests require a revised inspection report.")
     run.inspection_review = ReviewDecision(outcome="approved", notes=notes)
-    if run.pending_approval_requests:
+    if run.pending_inspection_approval_requests:
         _transition(run, WorkflowState.WAITING_APPROVAL, "approve_inspection_plan")
     else:
         _transition(run, WorkflowState.EDITING, "approve_inspection_plan")
@@ -376,22 +461,30 @@ def decide_approval(
     notes: str | None = None,
 ) -> None:
     _require_state(run, WorkflowState.WAITING_APPROVAL)
-    request = next(
-        (item for item in run.pending_approval_requests if item.id == request_id),
-        None,
-    )
+    request = next((item for item in run.pending_approval_requests if item.id == request_id), None)
     if request is None:
         raise WorkflowError(f'No pending approval request with id "{request_id}".')
+    is_edit_request = any(
+        item.id == request_id for item in run.pending_edit_approval_requests
+    )
     request.status = ApprovalStatus.APPROVED if approved else ApprovalStatus.REJECTED
     request.decision_notes = notes
     request.decided_at = datetime.now(UTC)
-    if run.pending_approval_requests:
+    if is_edit_request:
+        if run.pending_edit_approval_requests:
+            _touch(run)
+            return
+        target_state = (
+            WorkflowState.WAITING_EDIT_REVIEW
+            if run.rejected_edit_approval_requests
+            else WorkflowState.EDITING
+        )
+        _transition(run, target_state, "resolve_edit_approval_requests")
+        return
+    if run.pending_inspection_approval_requests:
         _touch(run)
         return
-    has_rejection = any(
-        item.status == ApprovalStatus.REJECTED
-        for item in run.inspection_report.approval_requests
-    )
+    has_rejection = bool(run.rejected_inspection_approval_requests)
     target_state = (
         WorkflowState.WAITING_INSPECTION_REVIEW if has_rejection else WorkflowState.EDITING
     )
@@ -401,7 +494,10 @@ def decide_approval(
 def record_edit_report(run: RepositoryRun, report: EditReport) -> None:
     _require_state(run, WorkflowState.EDITING)
     run.edit_report = report
-    _transition(run, WorkflowState.WAITING_EDIT_REVIEW, "record_edit_report")
+    if run.pending_edit_approval_requests:
+        _transition(run, WorkflowState.WAITING_APPROVAL, "request_edit_approval")
+    else:
+        _transition(run, WorkflowState.WAITING_EDIT_REVIEW, "record_edit_report")
 
 
 def approve_edit(run: RepositoryRun, notes: str | None = None) -> None:
@@ -435,6 +531,14 @@ def _add_pending_fact_requests(run: RepositoryRun, requests: list[FactRequest]) 
     run.pending_fact_requests.extend(
         request for request in requests if request.key not in existing_keys
     )
+
+
+def _pending_approval_requests(requests: list[ApprovalRequest]) -> list[ApprovalRequest]:
+    return [request for request in requests if request.status == ApprovalStatus.PENDING]
+
+
+def _rejected_approval_requests(requests: list[ApprovalRequest]) -> list[ApprovalRequest]:
+    return [request for request in requests if request.status == ApprovalStatus.REJECTED]
 
 
 def _wait_for_input_if_needed(run: RepositoryRun, resume_state: WorkflowState) -> None:

@@ -4,17 +4,17 @@ Repo Curator is intended to help prepare older software repositories for portfol
 
 ## Current status
 
-Implemented features are a local, read-only scanner, TypeSafe/Jev structured triage, persisted human-review run state, deterministic routing, and a read-only Codex inspection worker. `repo-curator scan <path>` returns a detailed `RepositoryProfile` and a redacted `TriageSummary`. `repo-curator triage <path>` scans the target, sends that summary to TypeSafe, and returns typed judgments about repository extent, completeness, portfolio-preparation effort, composition, organization, README and reproducibility expectations, technical domain, and possible human clarification.
+Implemented features are a local, read-only scanner, TypeSafe/Jev structured triage, persisted human-review run state, deterministic routing, and a Codex inspection/edit worker. `repo-curator scan <path>` returns a detailed `RepositoryProfile` and a redacted `TriageSummary`. `repo-curator triage <path>` scans the target, sends that summary to TypeSafe, and returns typed judgments about repository extent, completeness, portfolio-preparation effort, composition, organization, README and reproducibility expectations, technical domain, and possible human clarification.
 
 The scanner runs offline and does not execute target code, install dependencies, or modify the target. The triage summary contains a budgeted relative repository outline: directories, file metadata, special files, README excerpts, configuration, entry points, imports, artifacts, and risk findings. It excludes source-file bodies, secret and local-path values, package-script command bodies, dependency contents, and remote URLs. Review the JSON before sharing because it includes repository and file names.
 
 Triage identifies hypotheses; it does not authorize edits, infer personal facts, select a Codex model, or validate the repository. Its R4 `Noul` clarification probabilities are advisory signals shown to the human. They do not currently create `FactRequest` records. A/B/C portfolio classification is the only mandatory initial human input; the human may also record confirmed facts for suggested topics. Those facts are the downstream source of truth.
 
-R5 persists a run and applies explicit human input and approval gates. R6 records the deterministic model and reasoning-effort route. R7 launches only a read-only Codex inspection and records its structured report; it does not edit the target, validate it, or publish it to GitHub.
+R5 persists a run and applies explicit human input and approval gates. R6 records the deterministic model and reasoning-effort route. R7 launches read-only Codex inspection; R8 resumes its thread for human-approved, R2-limited editing and records a structured edit report. It does not validate the target or publish it to GitHub.
 
 ## Installation
 
-Requirements: Python 3.11 or newer and [`uv`](https://docs.astral.sh/uv/). Codex inspection also requires the local Codex CLI authenticated with `codex login`.
+Requirements: Python 3.11 or newer and [`uv`](https://docs.astral.sh/uv/). Codex inspection and approved editing require the local Codex CLI authenticated with `codex login`.
 
 From a checkout:
 
@@ -59,16 +59,28 @@ Triage makes a paid external API request. Its JSON result contains the submitted
 
 ### Human-review run
 
-Start a persisted run with one scan and one triage request. Run state is stored outside the target repository at `~/.repo-curator/runs/<run-id>/run.json` by default. Use `--state-root` to select a different local state directory.
+The normal command starts or resumes curation for a repository. It persists state
+outside the target repository at `~/.repo-curator/runs/<run-id>/run.json` by
+default. Use `--state-root` to select a different local state directory.
 
 ```sh
 export TYPESAFE_API_KEY='your-key-here'
-uv run --frozen repo-curator run start /path/to/repository --interactive
+uv run --frozen repo-curator run /path/to/repository
 ```
 
-The interactive command prompts for the initial A/B/C classification, routes the repository, and launches read-only Codex inspection. If inspection requests facts, it collects them in the same terminal session and resumes the persisted Codex thread. It stops only when a complete inspection report reaches the human review gate. The command prints a run ID and the raw advisory clarification signals; those signals do not currently create pending facts.
+The guided command prompts for required A/B/C classification and worker-requested
+facts, routes, launches read-only inspection, presents the inspection plan and
+R2 approvals, then resumes the same Codex thread for the approved edit scope. It
+stops at `WAITING_EDIT_REVIEW` after showing the structured edit report and Git
+change summary; validation is not implemented. Re-running the same command
+resumes the most recently updated unfinished run for that repository.
 
-Use `run start` without `--interactive` when you need separate, scriptable steps. In that mode, use the interactive batch prompt:
+When declining an R2 approval request, the guided prompt accepts an optional
+explanation. The explanation is persisted with the decision and is supplied to
+Codex when it revises the inspection plan or later resumes an edit iteration.
+
+Use `run start`, `run continue`, and the phase commands when you need separate,
+scriptable, debugging, or recovery steps. For example:
 
 ```sh
 uv run --frozen repo-curator run input <run-id>
@@ -88,7 +100,7 @@ uv run --frozen repo-curator run answer <run-id> authorship 'Independent work.'
 uv run --frozen repo-curator run facts <run-id>
 ```
 
-Inspection may introduce concrete `FactRequest` records. `run approval`, `run edit`, and `run final` continue to enforce review-state boundaries, but editing and validation remain unimplemented. Automatic conversion of R4 clarification signals into `FactRequest` records is deliberately deferred until real-repository evaluation data supports a policy. In particular, no current command can advance a run from `VALIDATING` to `READY_FOR_FINAL_REVIEW`; only a future validator may do that, and `FINISHED` always requires `run final approve`.
+Inspection may introduce concrete `FactRequest` records. `run approval`, `run edit`, and `run final` enforce review-state boundaries; deterministic validation remains unimplemented. Automatic conversion of R4 clarification signals into `FactRequest` records is deliberately deferred until real-repository evaluation data supports a policy. In particular, no current command can advance a run from `VALIDATING` to `READY_FOR_FINAL_REVIEW`; only a future validator may do that, and `FINISHED` always requires `run final approve`.
 
 ### Deterministic routing
 
@@ -113,6 +125,17 @@ uv run --frozen repo-curator run inspection execute <run-id>
 
 The command uses the persisted R6 model and reasoning effort, sends a compact R3–R6 context plus confirmed human facts, and requires a schema-valid `InspectionReport`. It prints worker route, thread, and inspection status, then normally ends in `WAITING_INSPECTION_REVIEW` (or `WAITING_FOR_INPUT` when the report requests required facts). Use `run continue <run-id>` to answer those facts and resume inspection. It does not modify the target repository. A failed worker remains in `INSPECTING` with concise failure metadata and can be retried with the same command.
 
+### Approved editing
+
+After reviewing and approving an inspection plan, resume the same worker thread:
+
+```sh
+uv run --frozen repo-curator run inspection approve <run-id>
+uv run --frozen repo-curator run continue <run-id>
+```
+
+The worker receives the approved inspection plan, confirmed facts, and only R2 requests that were explicitly approved. It runs with Codex `workspace-write` sandbox access, may make safe changes within that scope, and must return a schema-valid `EditReport`. The run then stops at `WAITING_EDIT_REVIEW`; no validation runs yet. If the worker discovers a new R2 action, it records an approval request and stops in `WAITING_APPROVAL`. Decide it with `run approval decide`, then use `run continue <run-id>` again. `run edit execute <run-id>` is available for scriptable execution.
+
 The current runtime is the locally authenticated Codex CLI. An OpenAI Agents SDK adapter remains a possible future backend, but it is not installed or selected because it requires separately billed API Platform credentials, which are not configured for this project.
 
 ## Development
@@ -128,7 +151,7 @@ Smoke-test the scanner against this checkout with `uv run --frozen repo-curator 
 
 ## Planned direction
 
-The intended single-repository workflow next adds approved editing in the persistent Codex context, deterministic validation, and final-publication verification. The current CLI launches only read-only inspection and never modifies a target repository.
+The intended single-repository workflow next adds deterministic validation and final-publication verification. The current CLI can perform only approved, R2-limited edits and does not validate or publish a target repository.
 
 ## Documentation
 

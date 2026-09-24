@@ -8,7 +8,7 @@ The architecture separates deterministic evidence collection, structured model j
 
 ## Components
 
-The static scanner, structured triage, human-review run state, deterministic router, and read-only Codex inspection worker are implemented today. Components 6–7 remain planned.
+The static scanner, structured triage, human-review run state, deterministic router, and Codex inspection/edit worker are implemented today. Components 6–7 remain planned.
 
 ### 1. Static scanner
 
@@ -35,7 +35,7 @@ Output: `TriageResult`.
 
 The raw R4 `Noul` clarification probabilities remain advisory model signals displayed to the human; R5 does not turn them into `FactRequest` records. A/B/C is the only mandatory initial human input. The user may record a fact for a suggested topic, and inspection reports may add concrete required facts. Interactive inspection resumes the persisted Codex context after those facts are confirmed. Confirmed facts are persisted and are the source of truth for later phases. Automatic conversion of R4 signals into `FactRequest` records is deliberately deferred until real-repository evaluation data supports a policy.
 
-R5 persists inspection/edit reports and enforces explicit inspection approval, R2 approval requests, edit review, and final-review boundaries. R7 supplies the read-only inspection worker; validation remains unimplemented.
+R5 persists inspection/edit reports and enforces explicit inspection approval, R2 approval requests, edit review, and final-review boundaries. R7 supplies read-only inspection; R8 resumes the thread for approved editing. Validation remains unimplemented.
 
 ### 4. Deterministic router
 
@@ -49,7 +49,7 @@ R6 defines and persists concrete escalation requests and decisions, including ei
 
 ### 5. Persistent Codex worker
 
-R7 implements the first phase through a small `CodexCliWorker` adapter. It receives a compact `InspectionRequest`, rather than a `RepositoryRun`, then invokes `codex exec` with the R6 provider model, `model_reasoning_effort`, read-only sandboxing, JSONL events, and the existing `InspectionReport` JSON Schema. Repo Curator stores only the Codex thread ID and concise attempt telemetry; Codex owns conversation history. A failed inspection remains `INSPECTING` so it can retry or resume its known thread without inventing a new workflow state.
+R7/R8 use a small `CodexCliWorker` adapter. It receives compact `InspectionRequest` and `EditRequest` models, rather than a `RepositoryRun`, then invokes `codex exec` with the R6 provider model, `model_reasoning_effort`, JSONL events, and phase-specific output schemas. Inspection uses read-only sandboxing. Approved editing resumes the stored thread with `workspace-write` sandboxing and receives only the approved plan, human facts, and approved R2 requests. Repo Curator stores only the Codex thread ID and concise attempt telemetry; Codex owns conversation history. Worker failures remain in their current phase for retry.
 
 The locally authenticated Codex CLI is the current backend because it works with the available Codex access. The OpenAI Agents SDK is a viable future adapter for application-managed sessions and sandboxes, but it requires separately billed API Platform credentials that are not configured for this project. It is not an R7 dependency.
 
@@ -67,7 +67,7 @@ INSPECT -> human review -> EDIT -> human review
                                   DIAGNOSE
 ```
 
-Inspection is implemented and read-only. Editing follows the approved plan and R2 authority when implemented. Diagnosis is invoked only when deterministic validation produces a failure requiring reasoning.
+Inspection is implemented and read-only. Editing is implemented only for the approved plan and R2 authority, then stops for edit review. Diagnosis is invoked only when deterministic validation produces a failure requiring reasoning.
 
 Specialization comes from prompts and phase boundaries, not separate agents that reread the repository.
 

@@ -15,14 +15,19 @@ from repo_curator.models import (
 from repo_curator.routing import RoutingConfig
 from repo_curator.scanner import scan_repository
 from repo_curator.workflow import (
+    EditReport,
     HumanFact,
     InspectionReport,
     PortfolioClassification,
+    WorkerRuntime,
+    approve_inspection,
+    begin_inspection,
+    record_inspection_report,
     route_run,
     set_portfolio_classification,
     start_run,
 )
-from repo_curator.worker import WorkerRuntimeError, build_inspection_request
+from repo_curator.worker import WorkerRuntimeError, build_edit_request, build_inspection_request
 
 
 def test_codex_worker_uses_route_and_returns_structured_report(
@@ -90,8 +95,43 @@ def test_codex_worker_resumes_existing_thread(
     assert arguments[arguments.index("resume") + 1] == "existing-thread"
 
 
+def test_codex_worker_edits_in_resumed_workspace_write_context(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = _edit_request(tmp_path)
+    executable = _fake_codex(tmp_path)
+    arguments_path = tmp_path / "arguments.json"
+    monkeypatch.setenv("FAKE_CODEX_ARGUMENTS", str(arguments_path))
+    monkeypatch.setenv(
+        "FAKE_CODEX_REPORT",
+        json.dumps(
+            {
+                "modified_files": ["README.md"],
+                "cheap_sanity_checks": ["README command reviewed"],
+            }
+        ),
+    )
+
+    result = CodexCliWorker(str(executable)).edit(request, resume_thread_id="existing-thread")
+
+    arguments = json.loads(arguments_path.read_text(encoding="utf-8"))
+    assert result.report.modified_files == ["README.md"]
+    assert arguments[arguments.index("--sandbox") + 1] == "workspace-write"
+    assert arguments[arguments.index("resume") + 1] == "existing-thread"
+    assert "approved cleanup" in arguments[-1]
+    assert "Safe changes are limited" in arguments[-1]
+    assert "Independent work." in arguments[-1]
+
+
 def test_codex_output_schema_forbids_extra_properties_at_every_object_level() -> None:
     schema = _strict_schema(InspectionReport.model_json_schema())
+
+    _assert_objects_forbid_extra_properties(schema)
+
+
+def test_codex_edit_output_schema_forbids_extra_properties_at_every_object_level() -> None:
+    schema = _strict_schema(EditReport.model_json_schema())
 
     _assert_objects_forbid_extra_properties(schema)
 
@@ -143,6 +183,49 @@ def _inspection_request(tmp_path: Path):
     run.human_facts["authorship"] = HumanFact(key="authorship", value="Independent work.")
     route_run(run, RoutingConfig.from_environment())
     return build_inspection_request(run)
+
+
+def _edit_request(tmp_path: Path):
+    repository = tmp_path / "edit-project"
+    repository.mkdir()
+    (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
+    scan_result = scan_repository(repository)
+    judgment = ChoiceJudgment(choice="single_project", confidence=0.8)
+    triage_result = TriageResult(
+        triage_summary=scan_result.triage_summary,
+        judgments=TriageJudgments(
+            project_extent=judgment,
+            repository_completeness=judgment,
+            cleanup_effort=ChoiceJudgment(choice="light", confidence=0.8),
+            repository_composition=judgment,
+            technical_domain=judgment,
+            organization_treatment=judgment,
+            readme_expectation=judgment,
+            reproducibility_expectation=judgment,
+            clarifications=TriageClarifications(
+                authorship=0.2,
+                academic_context=0.8,
+                repository_boundaries=0.3,
+                data_asset_rights=0.9,
+                intended_execution=0.6,
+            ),
+        ),
+        provider_model="jev-test",
+    )
+    run = start_run(scan_result.repository_profile, triage_result)
+    set_portfolio_classification(run, PortfolioClassification.B)
+    run.human_facts["authorship"] = HumanFact(key="authorship", value="Independent work.")
+    route_run(run, RoutingConfig.from_environment())
+    begin_inspection(run)
+    record_inspection_report(run, InspectionReport(summary="Document verified usage."))
+    approve_inspection(run)
+    run.worker_runtime = WorkerRuntime(
+        backend="codex_cli",
+        thread_id="existing-thread",
+        provider_model=run.routing_decision.provider_model,
+        reasoning_effort=run.routing_decision.reasoning_effort.value,
+    )
+    return build_edit_request(run)
 
 
 def _fake_codex(tmp_path: Path) -> Path:

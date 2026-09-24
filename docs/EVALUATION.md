@@ -2,11 +2,11 @@
 
 Repo Curator should be evaluated as a workflow, not only as a Python program.
 
-The current implementation includes the static scanner, TypeSafe/Jev triage, deterministic R5 run-state transitions, deterministic R6 route/escalation policy, and a fake-tested R7 Codex CLI inspection adapter. Editing and validation have not been implemented or evaluated.
+The current implementation includes the static scanner, TypeSafe/Jev triage, deterministic R5 run-state transitions, deterministic R6 route/escalation policy, and fake-tested R7/R8 Codex CLI inspection and approved-edit adapters. Validation has not been implemented or evaluated.
 
 ## Unit tests
 
-The current suite has fifty-seven deterministic tests covering scanner inventory and language signals, ignored directories, non-execution, R3 evidence, summary redaction and budgeting, local Git metadata, symlinks, TypeSafe question construction, provider response validation, mocked CLI output, interactive run startup and inspection continuation, batched human input, R5 state transitions, approval boundaries, persistence, R6 work-depth/model/effort routing, model configuration, escalation policy, and R7 Codex CLI command/output/failure handling. It uses a fake Codex executable and makes no paid TypeSafe or Codex calls.
+The current suite has sixty-seven deterministic tests covering scanner inventory and language signals, ignored directories, non-execution, R3 evidence, summary redaction and budgeting, local Git metadata, symlinks, TypeSafe question construction, provider response validation, mocked CLI output, the guided path-based user journey, inspection continuation and plan revision, R8 approved editing and retry behavior, R2 approval boundaries and rejection explanations, human-readable Git status, persistence, R6 work-depth/model/effort routing, model configuration, escalation policy, and Codex CLI command/output/failure handling. It uses a fake Codex executable and makes no paid TypeSafe or Codex calls.
 
 Future unit-test coverage should include:
 

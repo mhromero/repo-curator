@@ -60,19 +60,23 @@ When working on Jev integration:
 
 The preferred design is one persistent Codex context per target repository.
 
-R7 uses the local Codex CLI through `CodexCliWorker`; authenticate with `codex login` and launch inspection with
-`uv run --frozen repo-curator run inspection execute <run-id>`. It must use the
-R6 route, `codex exec` read-only sandboxing, JSONL events, and the existing
-`InspectionReport` schema. Unit tests must use a fake executable and never launch
-an authenticated Codex worker. The Agents SDK is not configured because this
-project has no API Platform credentials.
+R7/R8 use the local Codex CLI through `CodexCliWorker`; authenticate with `codex login`
+and launch inspection with `uv run --frozen repo-curator run inspection execute <run-id>`.
+Inspection uses the R6 route, `codex exec` read-only sandboxing, JSONL events, and
+the `InspectionReport` schema. Approved editing resumes the persisted thread with
+`workspace-write` sandboxing through `uv run --frozen repo-curator run continue <run-id>`
+or `run edit execute <run-id>`, and requires the `EditReport` schema. Unit tests must
+use a fake executable and never launch an authenticated Codex worker. The Agents SDK
+is not configured because this project has no API Platform credentials.
 
-Use `uv run --frozen repo-curator run continue <run-id>` to collect pending
-worker-requested facts and resume the persisted inspection thread. Keep
-`run input`, `run classify`, and `run answer` available for non-interactive use.
+Use `uv run --frozen repo-curator run <path>` for the normal guided experience:
+it starts or resumes the latest unfinished run for the target path through the
+implemented edit-review gate. Keep `run continue <run-id>`, `run input`,
+`run classify`, and `run answer` available for non-interactive use and recovery.
 
-The normal interactive entry point is `uv run --frozen repo-curator run start <path> --interactive`.
-It collects A/B/C, routes, and runs read-only inspection through fact requests until a human review gate.
+The guided command collects A/B/C, routes, runs read-only inspection through fact
+requests, presents the inspection plan and R2 approvals, then starts only the
+approved editing scope. It stops at edit review; do not add validation here.
 
 Phases:
 

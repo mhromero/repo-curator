@@ -1,6 +1,6 @@
 # Workflow
 
-The implemented CLI supports offline scanning, TypeSafe triage, persisted R5 human-review gates, deterministic R6 initial routing, and R7 read-only Codex inspection. Editing, validation, and publishing are not implemented.
+The implemented CLI supports offline scanning, TypeSafe triage, persisted R5 human-review gates, deterministic R6 initial routing, and R7/R8 inspection and approved editing. Validation and publishing are not implemented.
 
 ## Principle
 
@@ -22,10 +22,12 @@ The worker may reason and edit, but the human controls factual claims, risky cha
 3. CLARIFY
    Persist the human portfolio value A/B/C and any confirmed facts.
 
-   Implemented by `repo-curator run start <path> --interactive`, which prompts
-   for A/B/C before routing and inspection. Inspection facts are collected in the
-   same session and resume the persisted worker; `repo-curator run continue <run-id>`
-   resumes that flow later. `run input`, `run classify`, and `run answer` remain for scripting.
+   The normal command is `repo-curator run <path>`. It prompts for A/B/C before
+   routing and inspection, collects inspection facts in the same session, shows
+   the plan and approval requests, and resumes the worker for approved editing.
+   Repeating it resumes the latest unfinished run for that repository. `run start`,
+   `run continue`, `run input`, `run classify`, and `run answer` remain for
+   scripting and recovery.
    R4 clarification `Noul` probabilities are advisory signals displayed to the
    human. They do not currently create `FactRequest` records; A/B/C is the only
    mandatory initial input. Automatic conversion is deferred until evaluation data
@@ -47,8 +49,16 @@ The worker may reason and edit, but the human controls factual claims, risky cha
 7. EDIT
    The same Codex context performs the approved work.
 
+   Implemented by `repo-curator run continue <run-id>` after inspection approval,
+   or by `repo-curator run edit execute <run-id>` for scripting. It receives only
+   the approved inspection plan and approved R2 requests.
+
 8. EDIT REVIEW
    Human reviews the actual diff and requests changes or approves.
+
+   Implemented: editing returns a structured `EditReport` and stops in
+   `WAITING_EDIT_REVIEW`. A newly discovered R2 action creates a pending approval
+   and stops in `WAITING_APPROVAL` instead.
 
 9. VALIDATE
    Deterministic checks establish what actually works.
@@ -66,12 +76,14 @@ The worker may reason and edit, but the human controls factual claims, risky cha
 
 ## Implemented R5 state handling
 
-`repo-curator run start <path>` persists the R3 `RepositoryProfile` and R4
+`repo-curator run <path>` persists the R3 `RepositoryProfile` and R4
 `TriageResult` outside the target repository. It displays R4 clarification signals
-without creating fact requests, then enters `WAITING_FOR_INPUT` until the human sets
-A/B/C. The normal interactive command collects it with `run start <path> --interactive`;
-`run classify` remains available for scripting. It then resumes at `TRIAGED`. Inspection may later add
-concrete required fact requests, which resume the same Codex inspection context once answered.
+without creating fact requests, then collects A/B/C and any worker-requested facts
+as needed. It presents inspection findings and approval requests in readable form,
+resumes the persisted worker context for approved editing, and stops at
+`WAITING_EDIT_REVIEW`. `run start` and `run classify` remain available for scripting.
+Inspection may later add concrete required fact requests, which resume the same
+Codex inspection context once answered.
 
 `WAITING_FOR_INPUT` means a fact or portfolio classification is missing and stores
 the state to resume. `WAITING_APPROVAL` means a concrete R2 approval request is
@@ -85,12 +97,17 @@ stays in `INSPECTING` for retry. The state functions and CLI enforce these bound
 - inspection reports without required facts lead to `WAITING_INSPECTION_REVIEW`;
 - accepted inspection plans with pending R2 requests lead to `WAITING_APPROVAL`;
 - only all-approved R2 requests may enter `EDITING`;
+- R8 resumes the same Codex thread in `workspace-write` mode with the approved plan,
+  confirmed facts, and approved R2 requests only;
+- edit reports lead to `WAITING_EDIT_REVIEW` unless they introduce a new R2 approval request;
+- newly approved edit-time R2 requests resume `EDITING`; rejected ones lead to edit review;
 - accepted edit reviews lead to `VALIDATING`, never directly to completion;
 - only a future validator may reach `READY_FOR_FINAL_REVIEW`;
 - only explicit `run final approve` moves `READY_FOR_FINAL_REVIEW` to `FINISHED`.
 
-R5 does not generate reports, execute edits, or run validation. Report-intake
-commands exist solely as a narrow seam for the later worker and validator work.
+R5 supplies the persisted state, human facts, and approval boundaries used by R7/R8;
+it does not itself generate reports, execute workers, or run validation. Report-intake
+commands remain a narrow seam for worker and validator integrations.
 
 ## Implemented R6 routing
 

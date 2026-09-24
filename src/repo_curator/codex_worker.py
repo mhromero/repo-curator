@@ -7,8 +7,15 @@ import tempfile
 from pathlib import Path
 from typing import Any, Callable
 
-from .workflow import InspectionReport
-from .worker import InspectionRequest, WorkerInspectionResult, WorkerRuntimeError, WorkerUsage
+from .workflow import EditReport, InspectionReport
+from .worker import (
+    EditRequest,
+    InspectionRequest,
+    WorkerEditResult,
+    WorkerInspectionResult,
+    WorkerRuntimeError,
+    WorkerUsage,
+)
 
 
 class CodexCliWorker:
@@ -24,24 +31,67 @@ class CodexCliWorker:
         resume_thread_id: str | None = None,
         on_event: Callable[[dict[str, Any]], None] | None = None,
     ) -> WorkerInspectionResult:
+        report, thread_id, usage = self._run(
+            request,
+            report_type=InspectionReport,
+            prompt=_inspection_prompt(request, resuming=resume_thread_id is not None),
+            sandbox="read-only",
+            resume_thread_id=resume_thread_id,
+            on_event=on_event,
+        )
+        if not isinstance(report, InspectionReport):
+            raise AssertionError("Inspection report type did not match its schema.")
+        return WorkerInspectionResult(report=report, thread_id=thread_id, usage=usage)
+
+    def edit(
+        self,
+        request: EditRequest,
+        *,
+        resume_thread_id: str,
+        on_event: Callable[[dict[str, Any]], None] | None = None,
+    ) -> WorkerEditResult:
+        report, thread_id, usage = self._run(
+            request,
+            report_type=EditReport,
+            prompt=_edit_prompt(request),
+            sandbox="workspace-write",
+            resume_thread_id=resume_thread_id,
+            on_event=on_event,
+        )
+        if not isinstance(report, EditReport):
+            raise AssertionError("Edit report type did not match its schema.")
+        return WorkerEditResult(report=report, thread_id=thread_id, usage=usage)
+
+    def _run(
+        self,
+        request: InspectionRequest | EditRequest,
+        *,
+        report_type: type[InspectionReport] | type[EditReport],
+        prompt: str,
+        sandbox: str,
+        resume_thread_id: str | None,
+        on_event: Callable[[dict[str, Any]], None] | None,
+    ) -> tuple[InspectionReport | EditReport, str, WorkerUsage]:
         if not request.repository_path.is_dir():
             raise WorkerRuntimeError(f"Repository path does not exist: {request.repository_path}")
         if shutil.which(self.executable) is None:
             raise WorkerRuntimeError(f"Codex CLI executable not found: {self.executable}")
 
-        with tempfile.TemporaryDirectory(prefix="repo-curator-inspection-") as temporary_directory:
+        with tempfile.TemporaryDirectory(prefix="repo-curator-worker-") as temporary_directory:
             temporary_path = Path(temporary_directory)
-            schema_path = temporary_path / "inspection-report.schema.json"
-            output_path = temporary_path / "inspection-report.json"
+            schema_path = temporary_path / "worker-report.schema.json"
+            output_path = temporary_path / "worker-report.json"
             schema_path.write_text(
-                json.dumps(_strict_schema(InspectionReport.model_json_schema()), indent=2),
+                json.dumps(_strict_schema(report_type.model_json_schema()), indent=2),
                 encoding="utf-8",
             )
             command = self._command(
                 request,
                 schema_path=schema_path,
                 output_path=output_path,
+                sandbox=sandbox,
                 resume_thread_id=resume_thread_id,
+                prompt=prompt,
             )
             stderr_path = temporary_path / "codex.stderr"
             try:
@@ -82,22 +132,24 @@ class CodexCliWorker:
             if thread_id is None:
                 raise WorkerRuntimeError("Codex did not emit a thread ID.", usage=usage)
             try:
-                report = InspectionReport.model_validate_json(output_path.read_text(encoding="utf-8"))
+                report = report_type.model_validate_json(output_path.read_text(encoding="utf-8"))
             except (OSError, ValueError) as error:
                 raise WorkerRuntimeError(
-                    f"Codex did not produce a valid InspectionReport: {error}",
+                    f"Codex did not produce a valid {report_type.__name__}: {error}",
                     thread_id=thread_id,
                     usage=usage,
                 ) from error
-            return WorkerInspectionResult(report=report, thread_id=thread_id, usage=usage)
+            return report, thread_id, usage
 
     def _command(
         self,
-        request: InspectionRequest,
+        request: InspectionRequest | EditRequest,
         *,
         schema_path: Path,
         output_path: Path,
+        sandbox: str,
         resume_thread_id: str | None,
+        prompt: str,
     ) -> list[str]:
         route = request.routing_decision
         command = [
@@ -109,7 +161,7 @@ class CodexCliWorker:
             "--config",
             f'model_reasoning_effort="{route.reasoning_effort.value}"',
             "--sandbox",
-            "read-only",
+            sandbox,
             "--ask-for-approval",
             "never",
             "exec",
@@ -123,7 +175,7 @@ class CodexCliWorker:
         ]
         if resume_thread_id is not None:
             command.extend(["resume", resume_thread_id])
-        command.append(_inspection_prompt(request, resuming=resume_thread_id is not None))
+        command.append(prompt)
         return command
 
 
@@ -145,6 +197,33 @@ def _inspection_prompt(request: InspectionRequest, *, resuming: bool) -> str:
         )
     instructions.extend(["Known context follows:", context])
     return "\n".join(instructions)
+
+
+def _edit_prompt(request: EditRequest) -> str:
+    context = json.dumps(request.prompt_context(), indent=2, sort_keys=True)
+    return "\n".join(
+        [
+            "You are Repo Curator's single repository worker in the approved editing phase.",
+            "Resume the existing repository context and perform only the approved cleanup.",
+            "You may make clearly safe R2 changes that are within the approved inspection plan,",
+            "plus only the explicitly approved R2 change requests in the supplied context.",
+            "Safe changes are limited to disposable caches, .gitignore, verified README content or",
+            "formatting, and unambiguous dependency metadata or lockfiles that do not change behavior.",
+            "Do not silently remove factual README material unless it is demonstrably obsolete,",
+            "duplicated, or incorrect.",
+            "Do not modify source behavior, tests, dependencies, licensing, meaningful artifacts,",
+            "or repository structure unless that exact action is explicitly approved in the context.",
+            "Do not invent factual claims, attribution, academic context, results, or rights.",
+            "Do not use the network or install dependencies. Cheap local sanity checks are allowed",
+            "only when non-destructive and relevant to the approved work; they are not final validation.",
+            "If additional authority is needed, make no such change and return an ApprovalRequest",
+            "in the required EditReport. Return the actual changes and unresolved concerns.",
+            "Treat declined R2 requests and their human decision notes as constraints; do not retry",
+            "those actions unless the human later requests a revised edit scope.",
+            "Known context follows:",
+            context,
+        ]
+    )
 
 
 def _strict_schema(schema: dict[str, Any]) -> dict[str, Any]:
