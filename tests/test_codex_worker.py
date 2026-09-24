@@ -35,13 +35,15 @@ def test_codex_worker_uses_route_and_returns_structured_report(
     monkeypatch.setenv("FAKE_CODEX_ARGUMENTS", str(arguments_path))
     monkeypatch.setenv("FAKE_CODEX_REPORT", json.dumps({"summary": "Inspection complete."}))
 
-    result = CodexCliWorker(str(executable)).inspect(request)
+    events: list[dict[str, object]] = []
+    result = CodexCliWorker(str(executable)).inspect(request, on_event=events.append)
 
     arguments = json.loads(arguments_path.read_text(encoding="utf-8"))
     assert result.report.summary == "Inspection complete."
     assert result.thread_id == "thread-123"
     assert result.usage.input_tokens == 12
     assert result.usage.reasoning_output_tokens == 4
+    assert [event["type"] for event in events] == ["thread.started", "turn.completed"]
     assert arguments[arguments.index("--model") + 1] == "gpt-5.6-luna"
     assert arguments[arguments.index("--config") + 1] == 'model_reasoning_effort="low"'
     assert arguments[arguments.index("--sandbox") + 1] == "read-only"

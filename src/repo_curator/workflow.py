@@ -235,8 +235,13 @@ def begin_worker_inspection(run: RepositoryRun, backend: str) -> None:
         raise WorkflowError("A routing decision is required before launching a worker.")
     if run.state == WorkflowState.TRIAGED:
         begin_inspection(run)
-    elif run.state != WorkflowState.INSPECTING or run.inspection_report is not None:
-        raise WorkflowError("Worker inspection can only start from TRIAGED or retry an incomplete INSPECTING run.")
+    elif run.state != WorkflowState.INSPECTING or (
+        run.inspection_report is not None and run.inspection_review is not None
+    ):
+        raise WorkflowError(
+            "Worker inspection can only start from TRIAGED, retry an incomplete INSPECTING run, "
+            "or resume inspection after requested facts."
+        )
 
     runtime = run.worker_runtime
     if runtime is None:
@@ -341,7 +346,7 @@ def record_inspection_report(run: RepositoryRun, report: InspectionReport) -> No
     run.inspection_report = report
     _add_pending_fact_requests(run, report.fact_requests)
     if run.has_pending_input:
-        _wait_for_input_if_needed(run, WorkflowState.WAITING_INSPECTION_REVIEW)
+        _wait_for_input_if_needed(run, WorkflowState.INSPECTING)
     else:
         _transition(run, WorkflowState.WAITING_INSPECTION_REVIEW, "record_inspection_report")
     _touch(run)

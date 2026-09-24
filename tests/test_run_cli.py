@@ -189,7 +189,7 @@ def test_run_input_batches_pending_inspection_facts(tmp_path: Path, monkeypatch)
     stored_run = store.load(run_id)
     assert result.exit_code == 0
     assert "Saved 2 human response(s)." in result.stdout
-    assert "State: WAITING_INSPECTION_REVIEW" in result.stdout
+    assert "State: INSPECTING" in result.stdout
     assert stored_run.human_facts["authorship"].value == "Independent work"
     assert stored_run.human_facts["course"].value == "Machine Learning"
 
@@ -220,6 +220,190 @@ def test_run_input_collects_initial_portfolio_classification(tmp_path: Path, mon
     assert stored_run.state.value == "TRIAGED"
 
 
+def test_interactive_run_start_collects_input_routes_and_inspects(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repository = tmp_path / "sample-project"
+    repository.mkdir()
+    (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
+    scan_result = scan_repository(repository)
+    triage_result = _triage_result(scan_result.triage_summary)
+    monkeypatch.setattr("repo_curator.cli.scan_repository", lambda _path: scan_result)
+    monkeypatch.setattr("repo_curator.cli.triage_summary", lambda *_args, **_kwargs: triage_result)
+    executable = _fake_codex(tmp_path)
+    state_root = tmp_path / "state"
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            "start",
+            str(repository),
+            "--state-root",
+            str(state_root),
+            "--interactive",
+            "--codex-bin",
+            str(executable),
+        ],
+        input="B\ny\n",
+    )
+
+    run_id = next(
+        line.removeprefix("Run: ") for line in result.stdout.splitlines() if line.startswith("Run: ")
+    )
+    stored_run = RunStore(state_root).load(run_id)
+    assert result.exit_code == 0
+    assert "Work depth: standard" in result.stdout
+    assert "Launching read-only Codex worker" in result.stdout
+    assert "Connected to Codex thread thread-123; worker is inspecting." in result.stdout
+    assert "Codex thread: thread-123" in result.stdout
+    assert "State: WAITING_INSPECTION_REVIEW" in result.stdout
+    assert stored_run.routing_decision is not None
+    assert stored_run.inspection_report is not None
+
+
+def test_interactive_run_start_answers_worker_facts_and_resumes_thread(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repository = tmp_path / "sample-project"
+    repository.mkdir()
+    (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
+    scan_result = scan_repository(repository)
+    triage_result = _triage_result(scan_result.triage_summary)
+    monkeypatch.setattr("repo_curator.cli.scan_repository", lambda _path: scan_result)
+    monkeypatch.setattr("repo_curator.cli.triage_summary", lambda *_args, **_kwargs: triage_result)
+    monkeypatch.setenv(
+        "FAKE_CODEX_FIRST_REPORT",
+        json.dumps(
+            {
+                "summary": "Need confirmed authorship.",
+                "fact_requests": [
+                    {
+                        "key": "authorship",
+                        "prompt": "Who wrote this?",
+                        "source": "inspection",
+                    }
+                ],
+            }
+        ),
+    )
+    monkeypatch.setenv(
+        "FAKE_CODEX_RESUMED_REPORT",
+        json.dumps({"summary": "Inspection complete with confirmed authorship."}),
+    )
+    executable = _fake_codex(tmp_path)
+    state_root = tmp_path / "state"
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            "start",
+            str(repository),
+            "--state-root",
+            str(state_root),
+            "--interactive",
+            "--codex-bin",
+            str(executable),
+        ],
+        input="B\ny\nIndependent work\ny\n",
+    )
+
+    run_id = next(
+        line.removeprefix("Run: ") for line in result.stdout.splitlines() if line.startswith("Run: ")
+    )
+    stored_run = RunStore(state_root).load(run_id)
+    assert result.exit_code == 0
+    assert "Human input is required before the workflow can continue." in result.stdout
+    assert "Resuming read-only Codex thread thread-123" in result.stdout
+    assert "Inspection is ready for human review." in result.stdout
+    assert stored_run.state.value == "WAITING_INSPECTION_REVIEW"
+    assert stored_run.human_facts["authorship"].value == "Independent work"
+    assert stored_run.worker_runtime is not None
+    assert stored_run.worker_runtime.inspection_attempts == 2
+    assert stored_run.inspection_report is not None
+    assert stored_run.inspection_report.summary == "Inspection complete with confirmed authorship."
+
+
+def test_run_continue_answers_worker_facts_and_resumes_thread(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repository = tmp_path / "sample-project"
+    repository.mkdir()
+    (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
+    scan_result = scan_repository(repository)
+    triage_result = _triage_result(scan_result.triage_summary)
+    monkeypatch.setattr("repo_curator.cli.scan_repository", lambda _path: scan_result)
+    monkeypatch.setattr("repo_curator.cli.triage_summary", lambda *_args, **_kwargs: triage_result)
+    monkeypatch.setenv(
+        "FAKE_CODEX_FIRST_REPORT",
+        json.dumps(
+            {
+                "summary": "Need confirmed authorship.",
+                "fact_requests": [
+                    {
+                        "key": "authorship",
+                        "prompt": "Who wrote this?",
+                        "source": "inspection",
+                    }
+                ],
+            }
+        ),
+    )
+    monkeypatch.setenv(
+        "FAKE_CODEX_RESUMED_REPORT",
+        json.dumps({"summary": "Inspection complete with confirmed authorship."}),
+    )
+    executable = _fake_codex(tmp_path)
+    state_root = tmp_path / "state"
+    runner = CliRunner()
+
+    start = runner.invoke(app, ["run", "start", str(repository), "--state-root", str(state_root)])
+    run_id = start.stdout.splitlines()[0].removeprefix("Run: ")
+    assert runner.invoke(app, ["run", "classify", run_id, "B", "--state-root", str(state_root)]).exit_code == 0
+    assert runner.invoke(app, ["run", "route", run_id, "--state-root", str(state_root)]).exit_code == 0
+    assert runner.invoke(
+        app,
+        [
+            "run",
+            "inspection",
+            "execute",
+            run_id,
+            "--state-root",
+            str(state_root),
+            "--codex-bin",
+            str(executable),
+        ],
+    ).exit_code == 0
+
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            "continue",
+            run_id,
+            "--state-root",
+            str(state_root),
+            "--codex-bin",
+            str(executable),
+        ],
+        input="Independent work\ny\n",
+    )
+
+    stored_run = RunStore(state_root).load(run_id)
+    assert result.exit_code == 0
+    assert "Resuming read-only Codex thread thread-123" in result.stdout
+    assert "State: WAITING_INSPECTION_REVIEW" in result.stdout
+    assert stored_run.state.value == "WAITING_INSPECTION_REVIEW"
+    assert stored_run.worker_runtime is not None
+    assert stored_run.worker_runtime.inspection_attempts == 2
+
+
 def _fake_codex(tmp_path: Path) -> Path:
     executable = tmp_path / "fake-codex"
     executable.write_text(
@@ -231,12 +415,13 @@ import sys
 
 arguments = sys.argv[1:]
 output_path = Path(arguments[arguments.index("--output-last-message") + 1])
-print(json.dumps({"type": "thread.started", "thread_id": "thread-123"}))
-print(json.dumps({"type": "turn.completed", "usage": {"input_tokens": 12, "cached_input_tokens": 5, "output_tokens": 3, "reasoning_output_tokens": 4}}))
+report = os.environ.get("FAKE_CODEX_RESUMED_REPORT") if "resume" in arguments else os.environ.get("FAKE_CODEX_FIRST_REPORT")
+print(json.dumps({"type": "thread.started", "thread_id": "thread-123"}), flush=True)
+print(json.dumps({"type": "turn.completed", "usage": {"input_tokens": 12, "cached_input_tokens": 5, "output_tokens": 3, "reasoning_output_tokens": 4}}), flush=True)
 if os.environ.get("FAKE_CODEX_STATUS") == "1":
-    print(json.dumps({"type": "error", "message": "simulated failure"}))
+    print(json.dumps({"type": "error", "message": "simulated failure"}), flush=True)
     sys.exit(1)
-output_path.write_text('{"summary": "Inspection complete."}', encoding="utf-8")
+output_path.write_text(report or '{"summary": "Inspection complete."}', encoding="utf-8")
 """,
         encoding="utf-8",
     )

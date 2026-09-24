@@ -74,7 +74,7 @@ def test_triage_suggestion_fact_can_be_confirmed_without_becoming_a_gate(
         record_fact(run, "unknown", "value")
 
 
-def test_inspection_facts_resume_to_review_without_reasking_confirmed_facts(
+def test_inspection_facts_resume_inspection_without_reasking_confirmed_facts(
     tmp_path: Path,
 ) -> None:
     profile, triage_result = _scan_and_triage(tmp_path)
@@ -96,11 +96,11 @@ def test_inspection_facts_resume_to_review_without_reasking_confirmed_facts(
     )
 
     assert run.state == WorkflowState.WAITING_FOR_INPUT
-    assert run.resume_state == WorkflowState.WAITING_INSPECTION_REVIEW
+    assert run.resume_state == WorkflowState.INSPECTING
 
     record_fact(run, "runtime_expectation", "Run `python -m app`.")
 
-    assert run.state == WorkflowState.WAITING_INSPECTION_REVIEW
+    assert run.state == WorkflowState.INSPECTING
     assert run.pending_fact_requests == []
     assert run.human_facts["runtime_expectation"].value == "Run `python -m app`."
 

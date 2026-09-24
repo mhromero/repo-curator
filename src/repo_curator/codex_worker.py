@@ -5,7 +5,7 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from .workflow import InspectionReport
 from .worker import InspectionRequest, WorkerInspectionResult, WorkerRuntimeError, WorkerUsage
@@ -22,6 +22,7 @@ class CodexCliWorker:
         request: InspectionRequest,
         *,
         resume_thread_id: str | None = None,
+        on_event: Callable[[dict[str, Any]], None] | None = None,
     ) -> WorkerInspectionResult:
         if not request.repository_path.is_dir():
             raise WorkerRuntimeError(f"Repository path does not exist: {request.repository_path}")
@@ -42,17 +43,33 @@ class CodexCliWorker:
                 output_path=output_path,
                 resume_thread_id=resume_thread_id,
             )
+            stderr_path = temporary_path / "codex.stderr"
             try:
-                completed = subprocess.run(
-                    command,
-                    cwd=request.repository_path,
-                    capture_output=True,
-                    check=False,
-                    text=True,
-                )
+                with stderr_path.open("w", encoding="utf-8") as stderr_file:
+                    process = subprocess.Popen(
+                        command,
+                        cwd=request.repository_path,
+                        stdout=subprocess.PIPE,
+                        stderr=stderr_file,
+                        text=True,
+                        bufsize=1,
+                    )
+                    assert process.stdout is not None
+                    stdout_lines: list[str] = []
+                    for line in process.stdout:
+                        stdout_lines.append(line)
+                        if on_event is not None:
+                            _notify_event_callback(line, on_event)
+                    return_code = process.wait()
             except OSError as error:
                 raise WorkerRuntimeError(f"Could not start Codex CLI: {error}") from error
 
+            completed = subprocess.CompletedProcess(
+                command,
+                return_code,
+                "".join(stdout_lines),
+                stderr_path.read_text(encoding="utf-8"),
+            )
             events = _events_from_jsonl(completed.stdout)
             thread_id = _thread_id(events) or resume_thread_id
             usage = _usage_from_events(events)
@@ -106,25 +123,28 @@ class CodexCliWorker:
         ]
         if resume_thread_id is not None:
             command.extend(["resume", resume_thread_id])
-        command.append(_inspection_prompt(request))
+        command.append(_inspection_prompt(request, resuming=resume_thread_id is not None))
         return command
 
 
-def _inspection_prompt(request: InspectionRequest) -> str:
+def _inspection_prompt(request: InspectionRequest, *, resuming: bool) -> str:
     context = json.dumps(request.prompt_context(), indent=2, sort_keys=True)
-    return "\n".join(
-        [
-            "You are Repo Curator's single repository worker in the inspection phase.",
-            "Inspect the repository statically and return the required InspectionReport.",
-            "Do not modify files, install dependencies, run project code, run tests, use the network,",
-            "or infer or overwrite human-confirmed facts. Treat human-confirmed facts as authoritative.",
-            "Use repository evidence to identify concrete findings, proposed work, validation expectations,",
-            "facts that need human confirmation, and consequential changes that require approval.",
-            "This inspection grants no authority to edit or approve changes.",
-            "Known context follows:",
-            context,
-        ]
-    )
+    instructions = [
+        "You are Repo Curator's single repository worker in the inspection phase.",
+        "Inspect the repository statically and return the required InspectionReport.",
+        "Do not modify files, install dependencies, run project code, run tests, use the network,",
+        "or infer or overwrite human-confirmed facts. Treat human-confirmed facts as authoritative.",
+        "Use repository evidence to identify concrete findings, proposed work, validation expectations,",
+        "facts that need human confirmation, and consequential changes that require approval.",
+        "This inspection grants no authority to edit or approve changes.",
+    ]
+    if resuming:
+        instructions.append(
+            "This is a continuation after human-confirmed facts were supplied. "
+            "Reassess the prior inspection and return a complete revised InspectionReport."
+        )
+    instructions.extend(["Known context follows:", context])
+    return "\n".join(instructions)
 
 
 def _strict_schema(schema: dict[str, Any]) -> dict[str, Any]:
@@ -157,6 +177,18 @@ def _events_from_jsonl(stdout: str) -> list[dict[str, Any]]:
             raise WorkerRuntimeError("Codex emitted a JSONL event that was not an object.")
         events.append(event)
     return events
+
+
+def _notify_event_callback(
+    line: str,
+    callback: Callable[[dict[str, Any]], None],
+) -> None:
+    try:
+        event = json.loads(line)
+    except json.JSONDecodeError:
+        return
+    if isinstance(event, dict):
+        callback(event)
 
 
 def _thread_id(events: list[dict[str, Any]]) -> str | None:

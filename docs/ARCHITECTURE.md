@@ -8,7 +8,7 @@ The architecture separates deterministic evidence collection, structured model j
 
 ## Components
 
-The static scanner, structured triage, human-review run state, and deterministic router are implemented today. Components 5–7 describe the planned architecture and are not wired into the current CLI.
+The static scanner, structured triage, human-review run state, deterministic router, and read-only Codex inspection worker are implemented today. Components 6–7 remain planned.
 
 ### 1. Static scanner
 
@@ -33,9 +33,9 @@ Output: `TriageResult`.
 
 `repo-curator run start <path>` scans and triages once, persists both outputs, and requires the human to assign portfolio value A/B/C before the run can leave `WAITING_FOR_INPUT`.
 
-The raw R4 `Noul` clarification probabilities remain advisory model signals displayed to the human; R5 does not turn them into `FactRequest` records. A/B/C is the only mandatory initial human input. The user may record a fact for a suggested topic, and inspection reports may add concrete required facts. Confirmed facts are persisted and are the source of truth for later phases. Automatic conversion of R4 signals into `FactRequest` records is deliberately deferred until real-repository evaluation data supports a policy.
+The raw R4 `Noul` clarification probabilities remain advisory model signals displayed to the human; R5 does not turn them into `FactRequest` records. A/B/C is the only mandatory initial human input. The user may record a fact for a suggested topic, and inspection reports may add concrete required facts. Interactive inspection resumes the persisted Codex context after those facts are confirmed. Confirmed facts are persisted and are the source of truth for later phases. Automatic conversion of R4 signals into `FactRequest` records is deliberately deferred until real-repository evaluation data supports a policy.
 
-R5 also persists inspection/edit reports and enforces explicit inspection approval, R2 approval requests, edit review, and final-review boundaries. It provides no worker or validator implementation.
+R5 persists inspection/edit reports and enforces explicit inspection approval, R2 approval requests, edit review, and final-review boundaries. R7 supplies the read-only inspection worker; validation remains unimplemented.
 
 ### 4. Deterministic router
 

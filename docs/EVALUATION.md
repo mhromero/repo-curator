@@ -6,7 +6,7 @@ The current implementation includes the static scanner, TypeSafe/Jev triage, det
 
 ## Unit tests
 
-The current suite has fifty-four deterministic tests covering scanner inventory and language signals, ignored directories, non-execution, R3 evidence, summary redaction and budgeting, local Git metadata, symlinks, TypeSafe question construction, provider response validation, mocked CLI output, batched human input, R5 state transitions, approval boundaries, persistence, R6 work-depth/model/effort routing, model configuration, escalation policy, and R7 Codex CLI command/output/failure handling. It uses a fake Codex executable and makes no paid TypeSafe or Codex calls.
+The current suite has fifty-seven deterministic tests covering scanner inventory and language signals, ignored directories, non-execution, R3 evidence, summary redaction and budgeting, local Git metadata, symlinks, TypeSafe question construction, provider response validation, mocked CLI output, interactive run startup and inspection continuation, batched human input, R5 state transitions, approval boundaries, persistence, R6 work-depth/model/effort routing, model configuration, escalation policy, and R7 Codex CLI command/output/failure handling. It uses a fake Codex executable and makes no paid TypeSafe or Codex calls.
 
 Future unit-test coverage should include:
 

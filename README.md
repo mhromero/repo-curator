@@ -63,17 +63,25 @@ Start a persisted run with one scan and one triage request. Run state is stored 
 
 ```sh
 export TYPESAFE_API_KEY='your-key-here'
-uv run --frozen repo-curator run start /path/to/repository
+uv run --frozen repo-curator run start /path/to/repository --interactive
 ```
 
-The command prints a run ID and the raw advisory clarification signals. It starts in `WAITING_FOR_INPUT` until you set the human portfolio classification; those signals do not currently create pending facts. Use the interactive batch prompt:
+The interactive command prompts for the initial A/B/C classification, routes the repository, and launches read-only Codex inspection. If inspection requests facts, it collects them in the same terminal session and resumes the persisted Codex thread. It stops only when a complete inspection report reaches the human review gate. The command prints a run ID and the raw advisory clarification signals; those signals do not currently create pending facts.
+
+Use `run start` without `--interactive` when you need separate, scriptable steps. In that mode, use the interactive batch prompt:
 
 ```sh
 uv run --frozen repo-curator run input <run-id>
 uv run --frozen repo-curator run show <run-id>
 ```
 
-When an inspection requests facts, run the same `run input` command to answer all pending questions in one session. Use `not applicable` when that is the human answer. `run classify` and `run answer` remain available for scripting or one-off changes:
+For an existing run paused for worker-requested facts, continue the same interactive flow with:
+
+```sh
+uv run --frozen repo-curator run continue <run-id>
+```
+
+It collects all pending answers and resumes the saved Codex thread. `run input`, `run classify`, and `run answer` remain available for scripting or one-off changes. Use `not applicable` when that is the human answer:
 
 ```sh
 uv run --frozen repo-curator run answer <run-id> authorship 'Independent work.'
@@ -103,7 +111,7 @@ codex login
 uv run --frozen repo-curator run inspection execute <run-id>
 ```
 
-The command uses the persisted R6 model and reasoning effort, sends a compact R3–R6 context plus confirmed human facts, and requires a schema-valid `InspectionReport`. It prints the Codex thread ID and normally ends in `WAITING_INSPECTION_REVIEW` (or `WAITING_FOR_INPUT` when the report requests required facts). It does not modify the target repository. A failed worker remains in `INSPECTING` with concise failure metadata and can be retried with the same command.
+The command uses the persisted R6 model and reasoning effort, sends a compact R3–R6 context plus confirmed human facts, and requires a schema-valid `InspectionReport`. It prints worker route, thread, and inspection status, then normally ends in `WAITING_INSPECTION_REVIEW` (or `WAITING_FOR_INPUT` when the report requests required facts). Use `run continue <run-id>` to answer those facts and resume inspection. It does not modify the target repository. A failed worker remains in `INSPECTING` with concise failure metadata and can be retried with the same command.
 
 The current runtime is the locally authenticated Codex CLI. An OpenAI Agents SDK adapter remains a possible future backend, but it is not installed or selected because it requires separately billed API Platform credentials, which are not configured for this project.
 

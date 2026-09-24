@@ -22,8 +22,10 @@ The worker may reason and edit, but the human controls factual claims, risky cha
 3. CLARIFY
    Persist the human portfolio value A/B/C and any confirmed facts.
 
-   Implemented by `repo-curator run input <run-id>` for a batched interactive
-   prompt, with `run classify` and `run answer` retained for scripting.
+   Implemented by `repo-curator run start <path> --interactive`, which prompts
+   for A/B/C before routing and inspection. Inspection facts are collected in the
+   same session and resume the persisted worker; `repo-curator run continue <run-id>`
+   resumes that flow later. `run input`, `run classify`, and `run answer` remain for scripting.
    R4 clarification `Noul` probabilities are advisory signals displayed to the
    human. They do not currently create `FactRequest` records; A/B/C is the only
    mandatory initial input. Automatic conversion is deferred until evaluation data
@@ -67,8 +69,9 @@ The worker may reason and edit, but the human controls factual claims, risky cha
 `repo-curator run start <path>` persists the R3 `RepositoryProfile` and R4
 `TriageResult` outside the target repository. It displays R4 clarification signals
 without creating fact requests, then enters `WAITING_FOR_INPUT` until the human sets
-A/B/C with `run classify`; it then resumes at `TRIAGED`. Inspection may later add
-concrete required fact requests.
+A/B/C. The normal interactive command collects it with `run start <path> --interactive`;
+`run classify` remains available for scripting. It then resumes at `TRIAGED`. Inspection may later add
+concrete required fact requests, which resume the same Codex inspection context once answered.
 
 `WAITING_FOR_INPUT` means a fact or portfolio classification is missing and stores
 the state to resume. `WAITING_APPROVAL` means a concrete R2 approval request is
@@ -78,7 +81,8 @@ R7 launches inspection through one persisted Codex thread and records a schema-v
 report. It receives the compact R3–R6 context and confirmed facts; a worker failure
 stays in `INSPECTING` for retry. The state functions and CLI enforce these boundaries:
 
-- inspection reports lead to `WAITING_INSPECTION_REVIEW` unless they introduce a required fact;
+- inspection reports with required facts lead to `WAITING_FOR_INPUT` and resume `INSPECTING` once answered;
+- inspection reports without required facts lead to `WAITING_INSPECTION_REVIEW`;
 - accepted inspection plans with pending R2 requests lead to `WAITING_APPROVAL`;
 - only all-approved R2 requests may enter `EDITING`;
 - accepted edit reviews lead to `VALIDATING`, never directly to completion;

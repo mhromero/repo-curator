@@ -67,9 +67,12 @@ R6 route, `codex exec` read-only sandboxing, JSONL events, and the existing
 an authenticated Codex worker. The Agents SDK is not configured because this
 project has no API Platform credentials.
 
-Use `uv run --frozen repo-curator run input <run-id>` for batched interactive
-portfolio classification and pending fact collection. Keep `run classify` and
-`run answer` available for non-interactive use.
+Use `uv run --frozen repo-curator run continue <run-id>` to collect pending
+worker-requested facts and resume the persisted inspection thread. Keep
+`run input`, `run classify`, and `run answer` available for non-interactive use.
+
+The normal interactive entry point is `uv run --frozen repo-curator run start <path> --interactive`.
+It collects A/B/C, routes, and runs read-only inspection through fact requests until a human review gate.
 
 Phases:
 
