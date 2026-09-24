@@ -14,14 +14,25 @@ from repo_curator.models import (
 )
 from repo_curator.scanner import scan_repository
 from repo_curator.run_store import RunStore
-from repo_curator.workflow import FactRequest, InspectionReport, begin_inspection, record_inspection_report
+from repo_curator.workflow import (
+    FactRequest,
+    HumanFact,
+    InspectionReport,
+    PortfolioClassification,
+    RepositoryRun,
+    ValidationReport,
+    VerificationStatus,
+    WorkflowState,
+    begin_inspection,
+    record_inspection_report,
+)
 
 
 def test_run_cli_persists_classification_and_shows_triage_signals(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    repository = tmp_path / "sample-project"
+    repository = tmp_path / "uni-2026-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
     scan_result = scan_repository(repository)
@@ -74,7 +85,7 @@ def test_inspection_execute_records_worker_report_and_thread(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    repository = tmp_path / "sample-project"
+    repository = tmp_path / "uni-2026-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
     scan_result = scan_repository(repository)
@@ -118,7 +129,7 @@ def test_inspection_execute_failure_stays_inspecting_for_retry(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    repository = tmp_path / "sample-project"
+    repository = tmp_path / "uni-2026-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
     scan_result = scan_repository(repository)
@@ -158,7 +169,7 @@ def test_inspection_execute_failure_stays_inspecting_for_retry(
 
 
 def test_run_input_batches_pending_inspection_facts(tmp_path: Path, monkeypatch) -> None:
-    repository = tmp_path / "sample-project"
+    repository = tmp_path / "uni-2026-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
     scan_result = scan_repository(repository)
@@ -201,7 +212,7 @@ def test_run_input_batches_pending_inspection_facts(tmp_path: Path, monkeypatch)
 
 
 def test_run_input_collects_initial_portfolio_classification(tmp_path: Path, monkeypatch) -> None:
-    repository = tmp_path / "sample-project"
+    repository = tmp_path / "uni-2026-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
     scan_result = scan_repository(repository)
@@ -230,7 +241,7 @@ def test_interactive_run_start_collects_input_routes_and_inspects(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    repository = tmp_path / "sample-project"
+    repository = tmp_path / "uni-2026-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
     scan_result = scan_repository(repository)
@@ -274,7 +285,7 @@ def test_guided_run_completes_approved_edit_and_resumes_by_repository_path(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    repository = tmp_path / "sample-project"
+    repository = tmp_path / "uni-2026-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
     scan_result = scan_repository(repository)
@@ -305,7 +316,7 @@ def test_guided_run_completes_approved_edit_and_resumes_by_repository_path(
             "--codex-bin",
             str(executable),
         ],
-        input="B\ny\ny\ny\n",
+        input="B\ny\ny\ny\nuni-2026-class\ny\n",
     )
 
     run = RunStore(state_root).latest_active_for_repository(repository)
@@ -317,9 +328,9 @@ def test_guided_run_completes_approved_edit_and_resumes_by_repository_path(
     assert "Resuming Codex thread thread-123 with workspace-write access." in result.stdout
     assert "Edit report" in result.stdout
     assert "Approve these edits?" in result.stdout
-    assert "Edits approved. Deterministic validation has not been implemented" in result.stdout
+    assert "Verification outcome: PARTIALLY_VERIFIED" in result.stdout
     assert run is not None
-    assert run.state.value == "VALIDATING"
+    assert run.state.value == "READY_FOR_FINAL_REVIEW"
     assert run.worker_runtime is not None
     assert run.worker_runtime.edit_attempts == 1
     assert (repository / "README.md").read_text(encoding="utf-8") == "# Updated by fake Codex\n"
@@ -332,11 +343,101 @@ def test_guided_run_completes_approved_edit_and_resumes_by_repository_path(
     assert resumed.exit_code == 0
     assert "Resuming run for" in resumed.stdout
     assert "Scanning..." not in resumed.stdout
-    assert "Deterministic validation has not been implemented" in resumed.stdout
+    assert "READY_FOR_FINAL_REVIEW" in resumed.stdout
+
+
+def test_guided_run_renames_local_repository_only_after_explicit_approval(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repository = tmp_path / "old-course-folder"
+    repository.mkdir()
+    (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
+    scan_result = scan_repository(repository)
+    triage_result = _triage_result(scan_result.triage_summary)
+    monkeypatch.setattr("repo_curator.cli.scan_repository", lambda _path: scan_result)
+    monkeypatch.setattr("repo_curator.cli.triage_summary", lambda *_args, **_kwargs: triage_result)
+    monkeypatch.setenv("FAKE_CODEX_EDIT_REPORT", json.dumps({"modified_files": ["README.md"]}))
+    executable = _fake_codex(tmp_path)
+    state_root = tmp_path / "state"
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            str(repository),
+            "--state-root",
+            str(state_root),
+            "--codex-bin",
+            str(executable),
+        ],
+        input="B\ny\ny\ny\nuni-2026-class\ny\ny\n",
+    )
+
+    renamed_repository = tmp_path / "uni-2026-class"
+    run = RunStore(state_root).latest_active_for_repository(renamed_repository)
+    assert result.exit_code == 0
+    assert result.stdout.count("repository_naming:") == 1
+    assert 'Rename the local directory to "uni-2026-class"?' in result.stdout
+    assert "Current local directory: old-course-folder" in result.stdout
+    assert "Required name: uni-2026-class" in result.stdout
+    assert "This changes only the local directory; no remote repository will be renamed." in result.stdout
+    assert "Approval required" not in result.stdout
+    assert 'Local repository renamed to "uni-2026-class". No remote was changed.' in result.stdout
+    assert not repository.exists()
+    assert renamed_repository.is_dir()
+    assert run is not None
+    assert run.repository_profile.identity.path == str(renamed_repository)
+    assert run.state.value == "READY_FOR_FINAL_REVIEW"
+
+
+def test_guided_blocked_naming_mismatch_offers_direct_rename_without_retry_prompt(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "IS_Labs"
+    repository.mkdir()
+    (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
+    profile = scan_repository(repository).repository_profile
+    run = RepositoryRun(
+        id="a" * 32,
+        repository_profile=profile,
+        state=WorkflowState.BLOCKED,
+        portfolio_classification=PortfolioClassification.B,
+        human_facts={
+            "repository_naming": HumanFact(
+                key="repository_naming",
+                value="vgtu-2024-intelligent-systems",
+            )
+        },
+        validation_report=ValidationReport(
+            verification_status=VerificationStatus.BLOCKED,
+            summary="Repository naming needs human action.",
+        ),
+    )
+    state_root = tmp_path / "state"
+    RunStore(state_root).create(run)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        ["run", str(repository), "--state-root", str(state_root)],
+        input="y\n",
+    )
+
+    renamed_repository = tmp_path / "vgtu-2024-intelligent-systems"
+    saved_run = RunStore(state_root).load(run.id)
+    assert result.exit_code == 0
+    assert "Retry validation after taking human action?" not in result.stdout
+    assert 'Rename the local directory to "vgtu-2024-intelligent-systems"?' in result.stdout
+    assert 'Local repository renamed to "vgtu-2024-intelligent-systems". No remote was changed.' in result.stdout
+    assert renamed_repository.is_dir()
+    assert not repository.exists()
+    assert saved_run.state == WorkflowState.READY_FOR_FINAL_REVIEW
 
 
 def test_guided_run_renders_r2_approval_before_editing(tmp_path: Path, monkeypatch) -> None:
-    repository = tmp_path / "sample-project"
+    repository = tmp_path / "uni-2026-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
     scan_result = scan_repository(repository)
@@ -375,7 +476,7 @@ def test_guided_run_renders_r2_approval_before_editing(tmp_path: Path, monkeypat
             "--codex-bin",
             str(executable),
         ],
-        input="B\ny\ny\ny\ny\n",
+        input="B\ny\ny\ny\ny\nuni-2026-class\ny\n",
     )
 
     assert result.exit_code == 0
@@ -384,11 +485,11 @@ def test_guided_run_renders_r2_approval_before_editing(tmp_path: Path, monkeypat
     assert "Expected behavior change: Existing imports may need updates." in result.stdout
     assert "Approved." in result.stdout
     assert "Approve these edits?" in result.stdout
-    assert "State: VALIDATING" in result.stdout
+    assert "State: READY_FOR_FINAL_REVIEW" in result.stdout
 
 
 def test_guided_rejection_collects_an_explanation_for_the_worker(tmp_path: Path, monkeypatch) -> None:
-    repository = tmp_path / "sample-project"
+    repository = tmp_path / "uni-2026-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
     scan_result = scan_repository(repository)
@@ -428,21 +529,21 @@ def test_guided_rejection_collects_an_explanation_for_the_worker(tmp_path: Path,
             "--codex-bin",
             str(executable),
         ],
-        input="B\ny\ny\nn\nKeep the existing import paths.\ny\ny\n",
+        input="B\ny\ny\nn\nKeep the existing import paths.\ny\ny\nuni-2026-class\ny\n",
     )
 
     assert result.exit_code == 0
     assert "Why are you declining this change? (optional)" in result.stdout
     assert "Describe the required plan changes" not in result.stdout
     assert "Resuming read-only Codex thread thread-123" in result.stdout
-    assert "State: VALIDATING" in result.stdout
+    assert "State: READY_FOR_FINAL_REVIEW" in result.stdout
 
 
 def test_guided_edit_rejection_requests_a_revision_in_the_same_worker_context(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    repository = tmp_path / "sample-project"
+    repository = tmp_path / "uni-2026-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
     scan_result = scan_repository(repository)
@@ -472,7 +573,7 @@ def test_guided_edit_rejection_requests_a_revision_in_the_same_worker_context(
             "--codex-bin",
             str(executable),
         ],
-        input="B\ny\ny\nn\nKeep the existing README heading.\ny\n",
+        input="B\ny\ny\nn\nKeep the existing README heading.\ny\nuni-2026-class\ny\n",
     )
 
     run = RunStore(state_root).latest_active_for_repository(repository)
@@ -483,7 +584,7 @@ def test_guided_edit_rejection_requests_a_revision_in_the_same_worker_context(
     assert "Edit changes requested; resuming the existing Codex worker context." in result.stdout
     assert result.stdout.count("workspace-write access") == 2
     assert run is not None
-    assert run.state.value == "VALIDATING"
+    assert run.state.value == "READY_FOR_FINAL_REVIEW"
     assert run.edit_review is not None
     assert run.edit_review.outcome == "approved"
     assert run.worker_runtime is not None
@@ -494,7 +595,7 @@ def test_interactive_run_start_answers_worker_facts_and_resumes_thread(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    repository = tmp_path / "sample-project"
+    repository = tmp_path / "uni-2026-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
     scan_result = scan_repository(repository)
@@ -559,7 +660,7 @@ def test_run_continue_answers_worker_facts_and_resumes_thread(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    repository = tmp_path / "sample-project"
+    repository = tmp_path / "uni-2026-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
     scan_result = scan_repository(repository)
@@ -634,7 +735,7 @@ def test_run_continue_resumes_approved_worker_for_editing(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    repository = tmp_path / "sample-project"
+    repository = tmp_path / "uni-2026-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
     scan_result = scan_repository(repository)
@@ -710,7 +811,7 @@ def test_run_continue_resumes_approved_worker_for_editing(
 
 
 def test_edit_worker_failure_stays_editing_for_retry(tmp_path: Path, monkeypatch) -> None:
-    repository = tmp_path / "sample-project"
+    repository = tmp_path / "uni-2026-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
     scan_result = scan_repository(repository)

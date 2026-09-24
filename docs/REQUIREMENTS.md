@@ -22,6 +22,7 @@ A finished repository should satisfy the following where applicable:
 - Academic context and attribution are accurate.
 - Existing licenses and copyright notices are preserved. No license is invented when rights are unclear.
 - The final diff contains only intentional changes and no Repo Curator state or temporary artifacts.
+- Repository name follows naming convention: `uni-year-class`
 
 ### Verification status
 

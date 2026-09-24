@@ -10,7 +10,7 @@ The scanner runs offline and does not execute target code, install dependencies,
 
 Triage identifies hypotheses; it does not authorize edits, infer personal facts, select a Codex model, or validate the repository. Its R4 `Noul` clarification probabilities are advisory signals shown to the human. They do not currently create `FactRequest` records. A/B/C portfolio classification is the only mandatory initial human input; the human may also record confirmed facts for suggested topics. Those facts are the downstream source of truth.
 
-R5 persists a run and applies explicit human input and approval gates. R6 records the deterministic model and reasoning-effort route. R7 launches read-only Codex inspection; R8 resumes its thread for human-approved, R2-limited editing and records a structured edit report. It does not validate the target or publish it to GitHub.
+R5 persists a run and applies explicit human input and approval gates. R6 records the deterministic model and reasoning-effort route. R7 launches read-only Codex inspection; R8 resumes its thread for human-approved, R2-limited editing, records a structured edit report, and runs bounded deterministic validation. It does not publish to GitHub.
 
 ## Installation
 
@@ -72,14 +72,27 @@ The guided command prompts for required A/B/C classification and worker-requeste
 facts, routes, launches read-only inspection, presents the inspection plan and
 R2 approvals, then resumes the same Codex thread for the approved edit scope. It
 shows the structured edit report and Git change summary, then asks the human to
-approve the edits or request a revision. Approval records `VALIDATING`, but does
-not run validation yet; rejection resumes the same worker context with the
-requested changes. Re-running the same command resumes the most recently updated
-unfinished run for that repository.
+approve the edits or request a revision. Approval runs deterministic validation;
+rejection resumes the same worker context with the requested changes. Re-running
+the same command resumes the most recently updated unfinished run for that repository.
 
 When declining an R2 approval request, the guided prompt accepts an optional
 explanation. The explanation is persisted with the decision and is supplied to
 Codex when it revises the inspection plan or later resumes an edit iteration.
+
+Validation asks the human to enter the exact repository name required by the R1
+`uni-year-class` convention. Repo Curator never invents the university, year, or
+class value. When that name differs from the local directory, the guided flow
+shows a separate approval request before moving the local directory; it never
+renames a remote repository. A malformed name, a declined rename, or another
+failed required check is `BLOCKED` for human action. A declined naming rename
+leaves the folder unchanged and accepts an optional persisted human note.
+
+The deterministic checks rescan hygiene, verify README and `.gitignore` evidence,
+parse Python and notebook files without executing them, and run existing Python
+tests when present. They do not install dependencies, use a network, commit, push,
+or publish. `VERIFIED` and `PARTIALLY_VERIFIED` reach
+`READY_FOR_FINAL_REVIEW`; `BLOCKED` remains stopped for human action.
 
 Use `run start`, `run continue`, and the phase commands when you need separate,
 scriptable, debugging, or recovery steps. For example:
@@ -102,7 +115,7 @@ uv run --frozen repo-curator run answer <run-id> authorship 'Independent work.'
 uv run --frozen repo-curator run facts <run-id>
 ```
 
-Inspection may introduce concrete `FactRequest` records. `run approval`, `run edit`, and `run final` enforce review-state boundaries; deterministic validation remains unimplemented. Automatic conversion of R4 clarification signals into `FactRequest` records is deliberately deferred until real-repository evaluation data supports a policy. In particular, no current command can advance a run from `VALIDATING` to `READY_FOR_FINAL_REVIEW`; only a future validator may do that, and `FINISHED` always requires `run final approve`.
+Inspection may introduce concrete `FactRequest` records. `run approval`, `run edit`, and `run final` enforce review-state boundaries. Validation creates the explicit `repository_naming` fact request, then advances `VERIFIED` and `PARTIALLY_VERIFIED` runs from `VALIDATING` to `READY_FOR_FINAL_REVIEW`; `BLOCKED` requires human action. Automatic conversion of R4 clarification signals into `FactRequest` records is deliberately deferred until real-repository evaluation data supports a policy, and `FINISHED` always requires `run final approve`.
 
 ### Deterministic routing
 
@@ -153,7 +166,7 @@ Smoke-test the scanner against this checkout with `uv run --frozen repo-curator 
 
 ## Planned direction
 
-The intended single-repository workflow next adds deterministic validation and final-publication verification. The current CLI can perform only approved, R2-limited edits and does not validate or publish a target repository.
+The intended single-repository workflow next adds final-publication verification. The current CLI can perform approved, R2-limited edits and bounded deterministic validation, but does not publish a target repository.
 
 ## Documentation
 

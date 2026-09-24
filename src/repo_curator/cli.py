@@ -11,7 +11,13 @@ from .run_store import RunStore
 from .routing import RoutingConfig, RoutingError, migrate_legacy_provider_model
 from .scanner import scan_repository
 from .triage import TriageProviderError, triage_repository, triage_summary
+from .validation import (
+    capture_validation_baseline,
+    repository_name_is_valid,
+    validate_repository,
+)
 from .workflow import (
+    ApprovalStatus,
     EditReport,
     InspectionReport,
     PortfolioClassification,
@@ -20,6 +26,7 @@ from .workflow import (
     approve_edit,
     approve_final_review,
     approve_inspection,
+    add_validation_note,
     begin_inspection,
     begin_worker_editing,
     begin_worker_inspection,
@@ -31,8 +38,13 @@ from .workflow import (
     record_edit_report,
     record_fact,
     record_inspection_report,
+    record_repository_rename_decision,
+    record_validation_report,
     request_edit_changes,
     request_inspection_changes,
+    request_repository_naming_confirmation,
+    request_repository_rename_approval,
+    retry_validation,
     route_run,
     set_portfolio_classification,
     start_run,
@@ -61,10 +73,12 @@ run_app = typer.Typer(
 )
 inspection_app = typer.Typer(no_args_is_help=True, help="Manage inspection review.")
 edit_app = typer.Typer(no_args_is_help=True, help="Manage edit review.")
+validation_app = typer.Typer(no_args_is_help=True, help="Run deterministic validation.")
 approval_app = typer.Typer(no_args_is_help=True, help="Resolve R2 approval requests.")
 final_app = typer.Typer(no_args_is_help=True, help="Record the final GitHub review.")
 run_app.add_typer(inspection_app, name="inspection")
 run_app.add_typer(edit_app, name="edit")
+run_app.add_typer(validation_app, name="validation")
 run_app.add_typer(approval_app, name="approval")
 run_app.add_typer(final_app, name="final")
 app.add_typer(run_app, name="run")
@@ -530,6 +544,26 @@ def edit_execute(
     _print_pending_approvals(run)
 
 
+@validation_app.command("execute")
+def validation_execute(
+    run_id: str = typer.Argument(..., help="Persisted run identifier."),
+    state_root: StateRootOption = None,
+) -> None:
+    store = RunStore(state_root)
+    run = _load_run_or_exit(store, run_id)
+    try:
+        report = _execute_validation(store, run)
+    except (OSError, ValueError, WorkflowError) as error:
+        _workflow_error_and_exit(error)
+    if report is None:
+        typer.echo("Human input is required before validation can run.")
+        _print_pending_input(run)
+        typer.echo(f"State: {run.state.value}")
+        return
+    _print_validation_report(report)
+    typer.echo(f"State: {run.state.value}")
+
+
 @approval_app.command("decide")
 def approval_decide(
     run_id: str = typer.Argument(..., help="Persisted run identifier."),
@@ -693,6 +727,14 @@ def _execute_edit(
     worker = CodexCliWorker(codex_bin)
     if run.routing_decision is not None:
         migrate_legacy_provider_model(run.routing_decision, RoutingConfig.from_environment())
+    if run.validation_baseline is None:
+        try:
+            run.validation_baseline = capture_validation_baseline(
+                Path(run.repository_profile.identity.path)
+            )
+        except (OSError, ValueError):
+            # Baseline collection is useful evidence, but must not prevent an approved edit.
+            pass
     begin_worker_editing(run, worker.backend)
     request = build_edit_request(run)
     store.save(run)
@@ -740,6 +782,68 @@ def _execute_edit(
     return result
 
 
+def _execute_validation(store: RunStore, run):
+    if request_repository_naming_confirmation(run):
+        store.save(run)
+        return None
+    naming = run.human_facts["repository_naming"].value
+    current_path = Path(run.repository_profile.identity.path)
+    if naming != run.repository_profile.identity.directory_name and repository_name_is_valid(naming):
+        if request_repository_rename_approval(run, naming):
+            store.save(run)
+            return None
+        approved_rename = any(
+            request.status == ApprovalStatus.APPROVED
+            for request in run.validation_approval_requests
+        )
+        if approved_rename:
+            _apply_approved_local_repository_rename(run, current_path, naming)
+            store.save(run)
+            current_path = Path(run.repository_profile.identity.path)
+    report = validate_repository(
+        current_path,
+        classification=run.portfolio_classification,
+        repository_naming=naming,
+        edit_report=run.edit_report,
+        baseline=run.validation_baseline,
+    )
+    record_validation_report(run, report)
+    store.save(run)
+    return report
+
+
+def _apply_approved_local_repository_rename(run, source_path: Path, target_name: str) -> None:
+    """Move the local directory after the associated persisted approval."""
+    try:
+        source = source_path.expanduser().resolve(strict=True)
+    except OSError as error:
+        raise WorkflowError(f"Could not rename the local repository: {error}") from error
+    destination = source.parent / target_name
+    if source.name == target_name:
+        return
+    if destination.exists():
+        raise WorkflowError(
+            f'Could not rename the local repository: destination "{destination}" already exists.'
+        )
+    try:
+        source.rename(destination)
+    except OSError as error:
+        raise WorkflowError(f"Could not rename the local repository: {error}") from error
+
+    identity = run.repository_profile.identity
+    identity.path = str(destination)
+    identity.directory_name = target_name
+    if identity.git is not None:
+        git_root = Path(identity.git.root_path)
+        try:
+            relative_git_root = git_root.relative_to(source)
+        except ValueError:
+            pass
+        else:
+            identity.git.root_path = str(destination / relative_git_root)
+    typer.echo(f'Local repository renamed to "{target_name}". No remote was changed.')
+
+
 def _drive_guided_workflow(
     store: RunStore,
     run,
@@ -749,7 +853,6 @@ def _drive_guided_workflow(
     while True:
         if run.state == WorkflowState.WAITING_FOR_INPUT:
             typer.echo("Human input is required before the workflow can continue.")
-            _print_pending_input(run)
             if not _collect_pending_input(run):
                 typer.echo(f"State: {run.state.value}")
                 return
@@ -789,20 +892,97 @@ def _drive_guided_workflow(
 
         if run.state == WorkflowState.WAITING_EDIT_REVIEW:
             _review_edit_result(store, run)
-            if run.state == WorkflowState.VALIDATING:
-                typer.echo("Edits approved. Deterministic validation has not been implemented, so it was not run.")
-                typer.echo(f"State: {run.state.value}")
-                return
             continue
 
         if run.state == WorkflowState.VALIDATING:
-            typer.echo("Edit review has been approved. Deterministic validation has not been implemented, so it was not run.")
+            if _repository_name_needs_rename(run):
+                if not _review_repository_rename(store, run):
+                    typer.echo(f"State: {run.state.value}")
+                    return
+                continue
+            report = _execute_validation(store, run)
+            if report is None:
+                continue
+            _print_validation_report(report)
+            typer.echo(f"State: {run.state.value}")
+            return
+
+        if run.state == WorkflowState.READY_FOR_FINAL_REVIEW:
+            typer.echo("Validation is complete. Publication and final review are not implemented.")
+            typer.echo(f"State: {run.state.value}")
+            return
+
+        if run.state == WorkflowState.BLOCKED:
+            if run.validation_report is not None:
+                _print_validation_report(run.validation_report)
+                if _repository_name_needs_rename(run):
+                    typer.echo("The repository naming issue can be resolved by the local-rename decision below.")
+                    if not _review_repository_rename(store, run):
+                        typer.echo(f"State: {run.state.value}")
+                        return
+                    continue
+                note = typer.prompt(
+                    "Add a note for later review or diagnosis (optional)",
+                    default="",
+                    show_default=False,
+                ).strip()
+                if note:
+                    add_validation_note(run, note)
+                    store.save(run)
+                    typer.echo("Validation note saved.")
+                if typer.confirm("Retry validation after taking human action?", default=False):
+                    retry_validation(run)
+                    store.save(run)
+                    continue
             typer.echo(f"State: {run.state.value}")
             return
 
         typer.echo(f"State: {run.state.value}")
         typer.echo("This state is outside the currently implemented guided workflow.")
         return
+
+
+def _repository_name_needs_rename(run) -> bool:
+    fact = run.human_facts.get("repository_naming")
+    if fact is None or not repository_name_is_valid(fact.value):
+        return False
+    if fact.value == run.repository_profile.identity.directory_name:
+        return False
+    return not any(
+        request.status == ApprovalStatus.APPROVED
+        for request in run.validation_approval_requests
+    )
+
+
+def _review_repository_rename(store: RunStore, run) -> bool:
+    """Collect one direct, persisted decision for an actionable naming mismatch."""
+    target_name = run.human_facts["repository_naming"].value
+    current_path = Path(run.repository_profile.identity.path)
+    destination = current_path.parent / target_name
+    typer.echo("Repository naming")
+    typer.echo("─" * 36)
+    typer.echo(f"Current local directory: {current_path.name}")
+    typer.echo(f"Required name: {target_name}")
+    typer.echo("This changes only the local directory; no remote repository will be renamed.")
+    if destination.exists():
+        typer.echo(
+            f'Cannot rename because the destination "{destination}" already exists.',
+            err=True,
+        )
+        return False
+    if typer.confirm(f'Rename the local directory to "{target_name}"?', default=False):
+        record_repository_rename_decision(run, target_name, True)
+        if run.state == WorkflowState.BLOCKED:
+            retry_validation(run)
+        store.save(run)
+        typer.echo("Local repository rename approved.")
+        return True
+
+    notes = _prompt_optional_approval_notes()
+    record_repository_rename_decision(run, target_name, False, notes)
+    store.save(run)
+    typer.echo("Local repository rename declined; the folder is unchanged.")
+    return False
 
 
 def _review_inspection_plan(store: RunStore, run) -> None:
@@ -912,6 +1092,38 @@ def _print_edit_report(run) -> None:
     _print_report_section("Unresolved concerns", report.unresolved_concerns)
 
 
+def _print_validation_report(report) -> None:
+    typer.echo("Validation")
+    typer.echo("─" * 36)
+    typer.echo(f"Verification outcome: {report.verification_status.value}")
+    typer.echo(report.summary)
+    typer.echo()
+    for status, heading in (
+        ("passed", "Passed checks"),
+        ("failed", "Failed checks"),
+        ("skipped", "Skipped checks"),
+    ):
+        checks = [check for check in report.checks if check.status.value == status]
+        if not checks:
+            continue
+        typer.echo(f"{heading}:")
+        for check in checks:
+            typer.echo(f"- {check.name}: {check.detail}")
+        typer.echo()
+    if report.unresolved_concerns:
+        _print_report_section("Unresolved concerns from editing", report.unresolved_concerns)
+        typer.echo()
+    if report.human_notes:
+        _print_report_section("Human notes", report.human_notes)
+        typer.echo()
+    if report.baseline_note:
+        typer.echo(f"Baseline: {report.baseline_note}")
+    if report.verification_status.value == "BLOCKED":
+        typer.echo("Human action is required before this repository can proceed to final review.")
+    else:
+        typer.echo("Validation is complete; the repository is ready for final human review.")
+
+
 def _print_report_section(title: str, values: list[str]) -> None:
     typer.echo(f"{title}:")
     if values:
@@ -991,7 +1203,6 @@ def _drive_interactive_inspection(
     while True:
         if run.state == WorkflowState.WAITING_FOR_INPUT:
             typer.echo("Human input is required before the workflow can continue.")
-            _print_pending_input(run)
             if not _collect_pending_input(run):
                 typer.echo(f"State: {run.state.value}")
                 return
@@ -1117,7 +1328,10 @@ def _prompt_required_fact(key: str, prompt: str) -> str:
         value = typer.prompt(f"{key}: {prompt}").strip()
         if value:
             return value
-        typer.echo("A response is required. Use 'not applicable' when that is the answer.", err=True)
+        if key == "repository_naming":
+            typer.echo("A `uni-year-class` repository name is required.", err=True)
+        else:
+            typer.echo("A response is required. Use 'not applicable' when that is the answer.", err=True)
 
 
 def _print_pending_input(run) -> None:

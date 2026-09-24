@@ -1,6 +1,6 @@
 # Workflow
 
-The implemented CLI supports offline scanning, TypeSafe triage, persisted R5 human-review gates, deterministic R6 initial routing, and R7/R8 inspection and approved editing. Validation and publishing are not implemented.
+The implemented CLI supports offline scanning, TypeSafe triage, persisted R5 human-review gates, deterministic R6 initial routing, R7/R8 inspection and approved editing, and deterministic validation. Publishing is not implemented.
 
 ## Principle
 
@@ -58,12 +58,20 @@ The worker may reason and edit, but the human controls factual claims, risky cha
 
    Implemented: the guided CLI renders the structured `EditReport` and Git
    change summary, then asks the human to approve or request a revision. Approval
-   records `VALIDATING` without running validation; rejection resumes the same
-   worker context in `EDITING`. A newly discovered R2 action creates a pending
+   records `VALIDATING`, after which the guided flow runs deterministic validation;
+   rejection resumes the same worker context in `EDITING`. A newly discovered R2 action creates a pending
    approval and stops in `WAITING_APPROVAL` instead.
 
 9. VALIDATE
    Deterministic checks establish what actually works.
+
+   Implemented after edit approval in `repo-curator run <path>` or
+   `repo-curator run validation execute <run-id>`. It asks for a human-confirmed
+   repository name in the R1 `uni-year-class` format before validating; it never
+   invents the values. If that name differs from the local directory, the guided
+   flow requires a separate persisted approval before renaming that local directory;
+   it never renames a remote repository. `VERIFIED` and `PARTIALLY_VERIFIED` enter
+   `READY_FOR_FINAL_REVIEW`; `BLOCKED` stops for human action.
 
 10. DIAGNOSE, if needed
    The same Codex context reasons about validation failures.
@@ -84,7 +92,10 @@ without creating fact requests, then collects A/B/C and any worker-requested fac
 as needed. It presents inspection findings and approval requests in readable form,
 resumes the persisted worker context for approved editing, then presents the edit
 result for approval or revision. An approved edit review reaches `VALIDATING`,
-without running validation yet. `run start` and `run classify` remain available for
+then the guided command collects naming confirmation and runs deterministic
+validation. A naming mismatch is presented as an explicit local-rename approval;
+declining it leaves the repository unchanged and `BLOCKED`, where the human can
+leave a note and stop safely. `run start` and `run classify` remain available for
 scripting.
 Inspection may later add concrete required fact requests, which resume the same
 Codex inspection context once answered.
@@ -106,12 +117,13 @@ stays in `INSPECTING` for retry. The state functions and CLI enforce these bound
 - edit reports lead to `WAITING_EDIT_REVIEW` unless they introduce a new R2 approval request;
 - newly approved edit-time R2 requests resume `EDITING`; rejected ones lead to edit review;
 - accepted edit reviews lead to `VALIDATING`, never directly to completion;
-- only a future validator may reach `READY_FOR_FINAL_REVIEW`;
+- deterministic validation sends `VERIFIED` and `PARTIALLY_VERIFIED` to
+  `READY_FOR_FINAL_REVIEW`, while `BLOCKED` requires human action;
 - only explicit `run final approve` moves `READY_FOR_FINAL_REVIEW` to `FINISHED`.
 
 R5 supplies the persisted state, human facts, and approval boundaries used by R7/R8;
-it does not itself generate reports, execute workers, or run validation. Report-intake
-commands remain a narrow seam for worker and validator integrations.
+the deterministic validator records a structured validation report through that
+state model. Report-intake commands remain a narrow seam for worker and validator integrations.
 
 ## Implemented R6 routing
 

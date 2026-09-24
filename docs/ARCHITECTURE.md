@@ -8,7 +8,7 @@ The architecture separates deterministic evidence collection, structured model j
 
 ## Components
 
-The static scanner, structured triage, human-review run state, deterministic router, and Codex inspection/edit worker are implemented today. Components 6–7 remain planned.
+The static scanner, structured triage, human-review run state, deterministic router, Codex inspection/edit worker, and deterministic validator are implemented today. Final GitHub review remains planned.
 
 ### 1. Static scanner
 
@@ -67,7 +67,7 @@ INSPECT -> human review -> EDIT -> human review
                                   DIAGNOSE
 ```
 
-Inspection is implemented and read-only. Editing is implemented only for the approved plan and R2 authority, then enters an explicit human edit review. The guided CLI either resumes the same context for a requested revision or records `VALIDATING` after approval; it does not run validation yet. Diagnosis is invoked only when deterministic validation produces a failure requiring reasoning.
+Inspection is implemented and read-only. Editing is implemented only for the approved plan and R2 authority, then enters an explicit human edit review. The guided CLI either resumes the same context for a requested revision or records `VALIDATING` and runs deterministic validation after approval. Diagnosis is invoked only when deterministic validation produces a failure requiring reasoning.
 
 Specialization comes from prompts and phase boundaries, not separate agents that reread the repository.
 
@@ -75,7 +75,6 @@ Specialization comes from prompts and phase boundaries, not separate agents that
 
 The validator uses ordinary tools where possible:
 
-- dependency installation;
 - imports/builds;
 - documented run commands;
 - existing tests;
@@ -86,6 +85,16 @@ The validator uses ordinary tools where possible:
 - final diff checks.
 
 Validation returns structured results rather than asking an LLM whether commands succeeded.
+
+The implemented validator rescans repository hygiene, parses Python and notebook
+files without executing them, and runs existing Python tests without installing
+dependencies. It records `VERIFIED`, `PARTIALLY_VERIFIED`, or `BLOCKED`; only the
+first two reach `READY_FOR_FINAL_REVIEW`. It requests the exact human-confirmed
+R1 `uni-year-class` repository name rather than inferring its values, and never
+renames a remote repository. A mismatch becomes a persisted approval request;
+only an approved deterministic local filesystem move updates the run's saved
+repository path. A declined move is recorded as `BLOCKED` with an optional human
+note rather than being sent to a worker.
 
 ### 7. Human final review
 

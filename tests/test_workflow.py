@@ -24,16 +24,24 @@ from repo_curator.workflow import (
     PortfolioClassification,
     WorkflowError,
     WorkflowState,
+    ValidationReport,
+    VerificationStatus,
     approve_edit,
     approve_final_review,
     approve_inspection,
+    add_validation_note,
     begin_inspection,
     decide_approval,
     mark_ready_for_final_review,
     record_edit_report,
     record_fact,
     record_inspection_report,
+    record_repository_rename_decision,
+    record_validation_report,
     request_inspection_changes,
+    request_repository_naming_confirmation,
+    request_repository_rename_approval,
+    retry_validation,
     route_run,
     set_portfolio_classification,
     start_run,
@@ -219,6 +227,95 @@ def test_finished_requires_explicit_final_human_approval(tmp_path: Path) -> None
     assert run.final_review.approved is True
 
 
+def test_validation_requires_human_naming_confirmation_and_records_outcome(tmp_path: Path) -> None:
+    profile, triage_result = _scan_and_triage(tmp_path)
+    run = _triaged_run(profile, triage_result)
+    begin_inspection(run)
+    record_inspection_report(run, InspectionReport(summary="Inspection complete."))
+    approve_inspection(run)
+    record_edit_report(run, EditReport(modified_files=["README.md"]))
+    approve_edit(run)
+
+    assert request_repository_naming_confirmation(run) is True
+    assert run.state == WorkflowState.WAITING_FOR_INPUT
+    assert run.resume_state == WorkflowState.VALIDATING
+
+    record_fact(run, "repository_naming", "uni-2026-class")
+    assert run.state == WorkflowState.VALIDATING
+
+    record_validation_report(
+        run,
+        ValidationReport(
+            verification_status=VerificationStatus.PARTIALLY_VERIFIED,
+            summary="A documented limitation remains.",
+        ),
+    )
+
+    assert run.state == WorkflowState.READY_FOR_FINAL_REVIEW
+    assert run.validation_report is not None
+
+
+def test_validation_local_rename_requires_approval_and_preserves_rejection_note(
+    tmp_path: Path,
+) -> None:
+    profile, triage_result = _scan_and_triage(tmp_path)
+    run = _triaged_run(profile, triage_result)
+    begin_inspection(run)
+    record_inspection_report(run, InspectionReport(summary="Inspection complete."))
+    approve_inspection(run)
+    record_edit_report(run, EditReport(modified_files=["README.md"]))
+    approve_edit(run)
+    record_fact(run, "repository_naming", "uni-2026-renamed")
+
+    assert request_repository_rename_approval(run, "uni-2026-renamed") is True
+    request = run.pending_validation_approval_requests[0]
+    assert run.state == WorkflowState.WAITING_APPROVAL
+    assert "local repository directory" in request.proposed_change
+    assert "remote repository" in request.behavior_impact
+
+    decide_approval(run, request.id, False, "Keep the current directory name for now.")
+    assert run.state == WorkflowState.BLOCKED
+    assert run.validation_report is not None
+    assert "declined" in run.validation_report.summary
+    add_validation_note(run, "Will confirm the course acronym before renaming.")
+    assert run.validation_report.human_notes == ["Will confirm the course acronym before renaming."]
+
+    retry_validation(run)
+    assert run.state == WorkflowState.VALIDATING
+    assert request_repository_rename_approval(run, "uni-2026-renamed") is True
+    retry_request = run.pending_validation_approval_requests[0]
+    decide_approval(run, retry_request.id, True)
+    assert run.state == WorkflowState.VALIDATING
+
+
+def test_blocked_naming_mismatch_can_record_a_direct_rename_approval(tmp_path: Path) -> None:
+    profile, triage_result = _scan_and_triage(tmp_path)
+    run = _triaged_run(profile, triage_result)
+    begin_inspection(run)
+    record_inspection_report(run, InspectionReport(summary="Inspection complete."))
+    approve_inspection(run)
+    record_edit_report(run, EditReport(modified_files=["README.md"]))
+    approve_edit(run)
+    record_fact(run, "repository_naming", "uni-2026-renamed")
+    record_validation_report(
+        run,
+        ValidationReport(
+            verification_status=VerificationStatus.BLOCKED,
+            summary="Repository naming does not match the local directory.",
+        ),
+    )
+
+    record_repository_rename_decision(run, "uni-2026-renamed", True, "Rename after review.")
+    assert run.state == WorkflowState.BLOCKED
+    assert run.validation_report is not None
+    assert run.validation_report.summary == "Repository naming does not match the local directory."
+    assert run.validation_report.human_notes == ["Rename after review."]
+    assert run.validation_approval_requests[-1].status == ApprovalStatus.APPROVED
+
+    retry_validation(run)
+    assert run.state == WorkflowState.VALIDATING
+
+
 def test_run_store_round_trips_human_decisions(tmp_path: Path) -> None:
     profile, triage_result = _scan_and_triage(tmp_path)
     run = _triaged_run(profile, triage_result)
@@ -249,7 +346,7 @@ def _triaged_run(profile, triage_result):
 
 
 def _scan_and_triage(tmp_path: Path):
-    repository = tmp_path / "sample-project"
+    repository = tmp_path / "uni-2026-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
     scan_result = scan_repository(repository)

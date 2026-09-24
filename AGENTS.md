@@ -77,7 +77,8 @@ implemented edit-review decision. Keep `run continue <run-id>`, `run input`,
 The guided command collects A/B/C, routes, runs read-only inspection through fact
 requests, presents the inspection plan and R2 approvals, then starts only the
 approved editing scope and collects the edit-review decision. It then stops at
-`VALIDATING`; do not add validation here.
+`READY_FOR_FINAL_REVIEW` or `BLOCKED` after deterministic validation; do not add
+publication here.
 
 Phases:
 

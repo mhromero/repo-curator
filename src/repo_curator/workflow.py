@@ -6,7 +6,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator
 
-from .models import PortfolioClassification, RepositoryProfile, TriageResult
+from .models import GitStatusCounts, PortfolioClassification, RepositoryProfile, TriageResult
 from .routing import (
     EscalationDecision,
     EscalationRecord,
@@ -41,6 +41,19 @@ class ApprovalStatus(StrEnum):
     PENDING = "pending"
     APPROVED = "approved"
     REJECTED = "rejected"
+
+
+class VerificationStatus(StrEnum):
+    VERIFIED = "VERIFIED"
+    PARTIALLY_VERIFIED = "PARTIALLY_VERIFIED"
+    BLOCKED = "BLOCKED"
+
+
+class ValidationCheckStatus(StrEnum):
+    PASSED = "passed"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+    NOT_APPLICABLE = "not_applicable"
 
 
 class FactRequest(BaseModel):
@@ -101,6 +114,29 @@ class EditReport(BaseModel):
     approval_requests: list[ApprovalRequest] = Field(default_factory=list)
 
 
+class ValidationBaseline(BaseModel):
+    git_status_counts: GitStatusCounts | None = None
+    git_is_dirty: bool | None = None
+    captured_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class ValidationCheck(BaseModel):
+    name: str
+    status: ValidationCheckStatus
+    detail: str
+    required: bool = True
+
+
+class ValidationReport(BaseModel):
+    verification_status: VerificationStatus
+    summary: str
+    checks: list[ValidationCheck] = Field(default_factory=list)
+    unresolved_concerns: list[str] = Field(default_factory=list)
+    human_notes: list[str] = Field(default_factory=list)
+    baseline_note: str | None = None
+    completed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
 class ReviewDecision(BaseModel):
     outcome: str
     notes: str | None = None
@@ -149,6 +185,9 @@ class RepositoryRun(BaseModel):
     inspection_review: ReviewDecision | None = None
     edit_report: EditReport | None = None
     edit_review: ReviewDecision | None = None
+    validation_baseline: ValidationBaseline | None = None
+    validation_report: ValidationReport | None = None
+    validation_approval_requests: list[ApprovalRequest] = Field(default_factory=list)
     final_review: FinalReview | None = None
     routing_decision: RoutingDecision | None = None
     worker_runtime: WorkerRuntime | None = None
@@ -163,7 +202,15 @@ class RepositoryRun(BaseModel):
 
     @property
     def pending_approval_requests(self) -> list[ApprovalRequest]:
-        return self.pending_inspection_approval_requests + self.pending_edit_approval_requests
+        return (
+            self.pending_inspection_approval_requests
+            + self.pending_edit_approval_requests
+            + self.pending_validation_approval_requests
+        )
+
+    @property
+    def pending_validation_approval_requests(self) -> list[ApprovalRequest]:
+        return _pending_approval_requests(self.validation_approval_requests)
 
     @property
     def pending_inspection_approval_requests(self) -> list[ApprovalRequest]:
@@ -179,7 +226,11 @@ class RepositoryRun(BaseModel):
 
     @property
     def rejected_approval_requests(self) -> list[ApprovalRequest]:
-        return self.rejected_inspection_approval_requests + self.rejected_edit_approval_requests
+        return (
+            self.rejected_inspection_approval_requests
+            + self.rejected_edit_approval_requests
+            + self.rejected_validation_approval_requests
+        )
 
     @property
     def rejected_inspection_approval_requests(self) -> list[ApprovalRequest]:
@@ -193,6 +244,10 @@ class RepositoryRun(BaseModel):
             return []
         return _rejected_approval_requests(self.edit_report.approval_requests)
 
+    @property
+    def rejected_validation_approval_requests(self) -> list[ApprovalRequest]:
+        return _rejected_approval_requests(self.validation_approval_requests)
+
 
 TRIAGE_FACT_PROMPTS = {
     "authorship": "Clarify authorship, collaboration, or contribution boundaries.",
@@ -200,6 +255,11 @@ TRIAGE_FACT_PROMPTS = {
     "repository_boundaries": "Confirm whether this repository is the intended publication unit.",
     "data_asset_rights": "Clarify publication suitability or rights for data, models, and other assets.",
     "intended_execution": "Clarify the intended execution and validation expectations.",
+    "repository_naming": (
+        "Enter the intended repository name using the required `uni-year-class` convention. "
+        "Repo Curator will verify it and can rename the local directory only after your approval; "
+        "it never changes a remote repository."
+    ),
 }
 
 
@@ -467,6 +527,9 @@ def decide_approval(
     is_edit_request = any(
         item.id == request_id for item in run.pending_edit_approval_requests
     )
+    is_validation_request = any(
+        item.id == request_id for item in run.pending_validation_approval_requests
+    )
     request.status = ApprovalStatus.APPROVED if approved else ApprovalStatus.REJECTED
     request.decision_notes = notes
     request.decided_at = datetime.now(UTC)
@@ -480,6 +543,26 @@ def decide_approval(
             else WorkflowState.EDITING
         )
         _transition(run, target_state, "resolve_edit_approval_requests")
+        return
+    if is_validation_request:
+        if run.pending_validation_approval_requests:
+            _touch(run)
+            return
+        if not approved:
+            run.validation_report = ValidationReport(
+                verification_status=VerificationStatus.BLOCKED,
+                summary="Validation is blocked because the required local repository rename was declined.",
+                checks=[
+                    ValidationCheck(
+                        name="Repository naming",
+                        status=ValidationCheckStatus.FAILED,
+                        detail="The human-confirmed local repository rename was declined. No local or remote rename was performed.",
+                    )
+                ],
+            )
+            _transition(run, WorkflowState.BLOCKED, "reject_validation_approval_requests")
+        else:
+            _transition(run, WorkflowState.VALIDATING, "resolve_validation_approval_requests")
         return
     if run.pending_inspection_approval_requests:
         _touch(run)
@@ -512,6 +595,106 @@ def request_edit_changes(run: RepositoryRun, notes: str) -> None:
     _transition(run, WorkflowState.EDITING, "request_edit_changes")
 
 
+def request_repository_naming_confirmation(run: RepositoryRun) -> bool:
+    """Pause validation until the human confirms any intended naming convention."""
+    _require_state(run, WorkflowState.VALIDATING)
+    if "repository_naming" in run.human_facts:
+        return False
+    _add_pending_fact_requests(
+        run,
+        [
+            FactRequest(
+                key="repository_naming",
+                prompt=TRIAGE_FACT_PROMPTS["repository_naming"],
+                source="validation",
+            )
+        ],
+    )
+    _wait_for_input_if_needed(run, WorkflowState.VALIDATING)
+    return True
+
+
+def request_repository_rename_approval(run: RepositoryRun, target_name: str) -> bool:
+    """Require explicit authority before moving the local repository directory."""
+    _require_state(run, WorkflowState.VALIDATING)
+    if target_name == run.repository_profile.identity.directory_name:
+        return False
+    if any(
+        request.status in {ApprovalStatus.PENDING, ApprovalStatus.APPROVED}
+        for request in run.validation_approval_requests
+    ):
+        return False
+    run.validation_approval_requests.append(_repository_rename_request(target_name))
+    _transition(run, WorkflowState.WAITING_APPROVAL, "request_local_repository_rename")
+    return True
+
+
+def record_repository_rename_decision(
+    run: RepositoryRun,
+    target_name: str,
+    approved: bool,
+    notes: str | None = None,
+) -> None:
+    """Persist the direct guided decision for a local naming mismatch."""
+    if run.state not in {WorkflowState.VALIDATING, WorkflowState.BLOCKED}:
+        raise WorkflowError(
+            "A repository rename decision requires VALIDATING or BLOCKED state."
+        )
+    request = _repository_rename_request(target_name)
+    request.status = ApprovalStatus.APPROVED if approved else ApprovalStatus.REJECTED
+    request.decision_notes = notes
+    request.decided_at = datetime.now(UTC)
+    run.validation_approval_requests.append(request)
+    if not approved and run.state == WorkflowState.VALIDATING:
+        run.validation_report = ValidationReport(
+            verification_status=VerificationStatus.BLOCKED,
+            summary="Validation is blocked because the proposed local repository rename was declined.",
+            checks=[
+                ValidationCheck(
+                    name="Repository naming",
+                    status=ValidationCheckStatus.FAILED,
+                    detail=(
+                        "The human-confirmed local repository rename was declined. "
+                        "No local or remote rename was performed."
+                    ),
+                )
+            ],
+            human_notes=[notes] if notes else [],
+        )
+        _transition(run, WorkflowState.BLOCKED, "decline_local_repository_rename")
+        return
+    if notes and run.validation_report is not None:
+        run.validation_report.human_notes.append(notes)
+    _touch(run)
+
+
+def record_validation_report(run: RepositoryRun, report: ValidationReport) -> None:
+    _require_state(run, WorkflowState.VALIDATING)
+    run.validation_report = report
+    target_state = (
+        WorkflowState.BLOCKED
+        if report.verification_status == VerificationStatus.BLOCKED
+        else WorkflowState.READY_FOR_FINAL_REVIEW
+    )
+    _transition(run, target_state, "record_validation_report")
+
+
+def add_validation_note(run: RepositoryRun, note: str) -> None:
+    """Preserve a human observation without treating it as a worker instruction."""
+    if run.validation_report is None:
+        raise WorkflowError("A validation report is required before adding a validation note.")
+    if not note.strip():
+        raise WorkflowError("Validation note must not be blank.")
+    run.validation_report.human_notes.append(note.strip())
+    _touch(run)
+
+
+def retry_validation(run: RepositoryRun) -> None:
+    """Let a human re-run deterministic validation after taking a local action."""
+    _require_state(run, WorkflowState.BLOCKED)
+    _transition(run, WorkflowState.VALIDATING, "retry_validation")
+
+
 def mark_ready_for_final_review(run: RepositoryRun) -> None:
     """Integration seam for a future validator after it records an acceptable result."""
     _require_state(run, WorkflowState.VALIDATING)
@@ -539,6 +722,18 @@ def _pending_approval_requests(requests: list[ApprovalRequest]) -> list[Approval
 
 def _rejected_approval_requests(requests: list[ApprovalRequest]) -> list[ApprovalRequest]:
     return [request for request in requests if request.status == ApprovalStatus.REJECTED]
+
+
+def _repository_rename_request(target_name: str) -> ApprovalRequest:
+    return ApprovalRequest(
+        problem="The human-confirmed repository name does not match the local directory.",
+        proposed_change=f'Rename the local repository directory to "{target_name}".',
+        reason="The R1 naming convention requires the confirmed `uni-year-class` name.",
+        behavior_impact=(
+            "Moves only this local repository directory. It does not edit repository files, "
+            "Git history, Git configuration, or any remote repository."
+        ),
+    )
 
 
 def _wait_for_input_if_needed(run: RepositoryRun, resume_state: WorkflowState) -> None:

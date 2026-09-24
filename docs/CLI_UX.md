@@ -23,6 +23,12 @@ use should not require knowledge of the internal state machine.
 - Show actual repository changes before edit approval.
 - At edit review, let the human approve the completed edits or describe a
   revision; an approved review may advance to a later unimplemented phase.
+- Before validation, ask the human for the exact repository name in the R1
+  `uni-year-class` convention rather than inferring academic metadata.
+- If that name differs from the local directory, show a separate approval request
+  to rename only the local directory. Explain that no remote is renamed; on a
+  declined rename, offer an optional persisted note and leave the workflow safely
+  stopped at `BLOCKED`.
 - Resume the existing worker context when continuing worker work.
 - Never require the user to manually copy worker output, IDs, or structured
   state between commands.
