@@ -133,12 +133,14 @@ def test_final_review_shows_plain_folder_git_initialization(tmp_path: Path, caps
         existing_remote_url=None,
         worktree_status=("?? README.md",),
         initialize_repository=True,
+        description="A coursework implementation of intelligent-systems laboratory exercises.",
     )
 
     _print_final_review(run, plan)
 
     output = capsys.readouterr().out
     assert 'Local Git: initialize a new repository on branch "main"' in output
+    assert "GitHub description: A coursework implementation" in output
     assert "Initial commit files:" in output
     assert "- Untracked: README.md" in output
 

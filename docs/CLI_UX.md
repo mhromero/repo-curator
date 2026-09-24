@@ -30,8 +30,8 @@ use should not require knowledge of the internal state machine.
   declined rename, offer an optional persisted note and leave the workflow safely
   stopped at `BLOCKED`.
 - At final review, show validation status and concerns, source-code-change status,
-  the exact GitHub target, visibility, branch, and reviewed Git changes before
-  asking for publication approval.
+  the exact GitHub target, description, visibility, branch, and reviewed Git
+  changes before asking for publication approval.
 - Do not run Git or GitHub mutating commands until that final approval. Explain
   when a new repository will be created and that pushes are non-force. For a
   folder without Git metadata, explicitly show the planned Git initialization

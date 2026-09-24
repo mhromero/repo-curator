@@ -85,7 +85,8 @@ The worker may reason and edit, but the human controls factual claims, risky cha
     has the old local name, the review also shows the exact remote rename before
     it can occur. For a plain local folder, the review instead shows the planned
     `main` branch initialization and exact initial-commit files; Git is not
-    initialized until approval.
+    initialized until approval. A worker-supplied factual GitHub description is
+    also shown exactly and applied only after approval.
 
     A final-review decline with requested changes returns to `EDITING` and resumes
     the existing Codex context. A decline without requested changes remains at

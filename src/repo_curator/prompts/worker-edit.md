@@ -36,7 +36,11 @@ later requests a revised edit scope.
 
 When editing is complete, stop for human review and report actual modified and
 removed files, whether source code changed, deviations, sanity checks, unresolved
-concerns, and any new approval request. Do not declare the repository finished.
+concerns, and any new approval request. When supported by repository evidence,
+also provide a concise factual `github_description` of at most 160 characters for
+the GitHub About section; otherwise use `null`. Do not use it for marketing,
+unverified results, or claims about authorship. Do not declare the repository
+finished.
 
 Known context follows:
 

@@ -112,6 +112,14 @@ class EditReport(BaseModel):
     cheap_sanity_checks: list[str] = Field(default_factory=list)
     unresolved_concerns: list[str] = Field(default_factory=list)
     approval_requests: list[ApprovalRequest] = Field(default_factory=list)
+    github_description: str | None = Field(default=None, max_length=160)
+
+    @field_validator("github_description")
+    @classmethod
+    def _normalize_github_description(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip() or None
 
 
 class ValidationBaseline(BaseModel):

@@ -867,10 +867,16 @@ def _prepare_publication(run, publisher: GitHubCliPublisher):
     if naming is None:
         raise WorkflowError("Final publication requires the human-confirmed repository name.")
     visibility = run.human_facts.get("github_visibility")
+    kwargs: dict[str, str | None] = {
+        "expected_name": naming.value,
+        "visibility": visibility.value if visibility is not None else None,
+    }
+    description = run.edit_report.github_description if run.edit_report is not None else None
+    if description is not None:
+        kwargs["description"] = description
     return publisher.prepare(
         Path(run.repository_profile.identity.path),
-        expected_name=naming.value,
-        visibility=visibility.value if visibility is not None else None,
+        **kwargs,
     )
 
 
@@ -1315,6 +1321,7 @@ def _print_final_review(run, plan) -> None:
     if run.edit_report is not None:
         typer.echo(f"Source code changed: {'yes' if run.edit_report.source_code_changed else 'no'}")
     typer.echo(f"GitHub repository: {plan.repository}")
+    typer.echo(f"GitHub description: {plan.description or '(leave empty)'}")
     typer.echo(f"Visibility: {plan.visibility}")
     typer.echo(f"Branch to push: {plan.branch}")
     if plan.initialize_repository:

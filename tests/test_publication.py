@@ -29,19 +29,28 @@ class FakeRunner:
 
 
 def test_publisher_creates_confirmed_personal_repository_then_non_force_pushes(tmp_path: Path) -> None:
-    runner = FakeRunner(
-        _new_repository_responses(
-            status=[(0, " M README.md\n", ""), (0, " M README.md\n", "")]
-        )
+    description = "A coursework implementation of intelligent-systems laboratory exercises."
+    responses = _new_repository_responses(
+        status=[(0, " M README.md\n", ""), (0, " M README.md\n", "")]
     )
+    responses[("gh", "repo", "edit", "maria/vgtu-2024-intelligent-systems", "--description", description)] = [
+        (0, "", "")
+    ]
+    runner = FakeRunner(responses)
     publisher = GitHubCliPublisher(runner=runner)
 
-    plan = publisher.prepare(tmp_path, expected_name="vgtu-2024-intelligent-systems", visibility="public")
+    plan = publisher.prepare(
+        tmp_path,
+        expected_name="vgtu-2024-intelligent-systems",
+        visibility="public",
+        description=description,
+    )
     result = publisher.publish(plan)
 
     assert result.repository == "maria/vgtu-2024-intelligent-systems"
     assert result.created_repository is True
     assert ("gh", "repo", "create", "maria/vgtu-2024-intelligent-systems", "--public", "--source", str(tmp_path.resolve()), "--remote", "origin") in runner.calls
+    assert ("gh", "repo", "edit", "maria/vgtu-2024-intelligent-systems", "--description", description) in runner.calls
     assert ("git", "push", "origin", "HEAD:refs/heads/main") in runner.calls
     assert all("--force" not in command for command in runner.calls)
 

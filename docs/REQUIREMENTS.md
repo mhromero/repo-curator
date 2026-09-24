@@ -252,6 +252,11 @@ to another user or organization without an explicit, supported ownership path.
 It may rename an existing remote repository only when the final review explicitly
 shows the exact rename and authenticated ownership checks pass.
 
+When worker evidence supports it, final review may include one concise factual
+GitHub repository description. The exact text must be shown before approval and
+may be applied only after approval. Repo Curator does not infer or manage topics
+or website metadata.
+
 For a directory that is not yet a local Git repository, final review may propose
 initializing Git on an explicit branch and must list the files that the initial
 commit will contain. `git init`, the initial commit, GitHub repository creation,

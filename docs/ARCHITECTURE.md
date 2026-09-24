@@ -114,8 +114,9 @@ non-mutating initial-Git plan with a `main` branch and exact initial files; only
 approval may initialize it. After approval it may commit all reviewed local changes
 and use a normal non-force push. An authenticated personal
 remote rename is allowed only when its exact before/after identity is shown in
-final review; forks, retargeting, and foreign/organization-owned remotes are
-refused. `FINISHED`
+final review; a worker-proposed factual repository description is likewise shown
+exactly and applied only after approval. Forks, retargeting, and
+foreign/organization-owned remotes are refused. `FINISHED`
 requires the adapter to record a successful push, not merely the approval.
 
 ## Why no LangGraph in v1?

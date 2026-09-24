@@ -103,6 +103,10 @@ Curator never renames or retargets an existing remote without showing it in fina
 review, and refuses forks or
 foreign/organization-owned remotes.
 
+When supported by repository evidence, the editing worker also returns a concise
+factual GitHub About description. Final review shows the exact description, and
+approval applies it; Repo Curator does not manage topics or a website URL.
+
 Declining final publication with a requested repository change resumes the same
 Codex editing context. The guided prompt can also replace the confirmed R1
 repository name: when feedback contains one distinct R1-shaped name, it asks for

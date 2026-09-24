@@ -45,6 +45,7 @@ class PublicationPlan:
     existing_remote_url: str | None
     worktree_status: tuple[str, ...]
     initialize_repository: bool = False
+    description: str | None = None
 
     @property
     def repository(self) -> str:
@@ -71,12 +72,18 @@ class GitHubCliPublisher:
         *,
         expected_name: str,
         visibility: str | None,
+        description: str | None = None,
     ) -> PublicationPlan:
         path = repository_path.expanduser().resolve()
         if not path.is_dir():
             raise PublicationError(f"Repository path does not exist: {path}")
         if not self._is_git_repository(path):
-            return self._prepare_initial_repository(path, expected_name=expected_name, visibility=visibility)
+            return self._prepare_initial_repository(
+                path,
+                expected_name=expected_name,
+                visibility=visibility,
+                description=description,
+            )
         branch = self._git(path, "branch", "--show-current").strip()
         if not branch:
             raise PublicationError("Publication requires a checked-out local branch; detached HEAD is not supported.")
@@ -101,6 +108,7 @@ class GitHubCliPublisher:
                 existing_remote_url=None,
                 worktree_status=status,
                 initialize_repository=False,
+                description=description,
             )
 
         remote_owner, remote_name = _github_remote_identity(remote_url)
@@ -130,6 +138,7 @@ class GitHubCliPublisher:
             existing_remote_url=remote_url,
             worktree_status=status,
             initialize_repository=False,
+            description=description,
         )
 
     def publish(self, plan: PublicationPlan) -> PublicationResult:
@@ -138,6 +147,7 @@ class GitHubCliPublisher:
             plan.repository_path,
             expected_name=plan.name,
             visibility=plan.visibility,
+            description=plan.description,
         )
         if _plan_signature(current) != _plan_signature(plan):
             raise PublicationError(
@@ -188,6 +198,15 @@ class GitHubCliPublisher:
                 "origin",
                 _renamed_remote_url(current.existing_remote_url, current.owner, current.name),
             )
+        if current.description is not None:
+            self._gh(
+                current.repository_path,
+                "repo",
+                "edit",
+                current.repository,
+                "--description",
+                current.description,
+            )
         self._git(
             current.repository_path,
             "push",
@@ -214,6 +233,7 @@ class GitHubCliPublisher:
         *,
         expected_name: str,
         visibility: str | None,
+        description: str | None,
     ) -> PublicationPlan:
         status = _initial_worktree_status(path)
         if not status:
@@ -234,6 +254,7 @@ class GitHubCliPublisher:
             existing_remote_url=None,
             worktree_status=status,
             initialize_repository=True,
+            description=description,
         )
 
     def _is_git_repository(self, path: Path) -> bool:
@@ -323,6 +344,7 @@ def _plan_signature(plan: PublicationPlan) -> tuple[object, ...]:
         plan.existing_remote_url,
         plan.worktree_status,
         plan.initialize_repository,
+        plan.description,
     )
 
 
