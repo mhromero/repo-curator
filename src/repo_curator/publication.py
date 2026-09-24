@@ -44,6 +44,7 @@ class PublicationPlan:
     rename_existing_repository: bool
     existing_remote_url: str | None
     worktree_status: tuple[str, ...]
+    initialize_repository: bool = False
 
     @property
     def repository(self) -> str:
@@ -72,7 +73,10 @@ class GitHubCliPublisher:
         visibility: str | None,
     ) -> PublicationPlan:
         path = repository_path.expanduser().resolve()
-        self._git(path, "rev-parse", "--is-inside-work-tree")
+        if not path.is_dir():
+            raise PublicationError(f"Repository path does not exist: {path}")
+        if not self._is_git_repository(path):
+            return self._prepare_initial_repository(path, expected_name=expected_name, visibility=visibility)
         branch = self._git(path, "branch", "--show-current").strip()
         if not branch:
             raise PublicationError("Publication requires a checked-out local branch; detached HEAD is not supported.")
@@ -96,6 +100,7 @@ class GitHubCliPublisher:
                 rename_existing_repository=False,
                 existing_remote_url=None,
                 worktree_status=status,
+                initialize_repository=False,
             )
 
         remote_owner, remote_name = _github_remote_identity(remote_url)
@@ -124,6 +129,7 @@ class GitHubCliPublisher:
             rename_existing_repository=remote_name != expected_name,
             existing_remote_url=remote_url,
             worktree_status=status,
+            initialize_repository=False,
         )
 
     def publish(self, plan: PublicationPlan) -> PublicationResult:
@@ -138,6 +144,8 @@ class GitHubCliPublisher:
                 "Repository or remote state changed after final review. Re-run the guided final review."
             )
 
+        if current.initialize_repository:
+            self._git(current.repository_path, "init", "--initial-branch", current.branch)
         if current.worktree_status:
             self._git(current.repository_path, "add", "-A")
             self._git(
@@ -199,6 +207,44 @@ class GitHubCliPublisher:
         if not login:
             raise PublicationError("GitHub CLI did not return the authenticated user name.")
         return login
+
+    def _prepare_initial_repository(
+        self,
+        path: Path,
+        *,
+        expected_name: str,
+        visibility: str | None,
+    ) -> PublicationPlan:
+        status = _initial_worktree_status(path)
+        if not status:
+            raise PublicationError("Publication requires at least one file for the initial commit.")
+        owner = self._authenticated_login(path)
+        if visibility not in {"public", "private"}:
+            raise PublicationInputRequired("github_visibility")
+        return PublicationPlan(
+            repository_path=path,
+            owner=owner,
+            name=expected_name,
+            branch="main",
+            visibility=visibility,
+            remote_name=None,
+            create_repository=True,
+            existing_repository_name=None,
+            rename_existing_repository=False,
+            existing_remote_url=None,
+            worktree_status=status,
+            initialize_repository=True,
+        )
+
+    def _is_git_repository(self, path: Path) -> bool:
+        result = self._run([self.git_bin, "-C", str(path), "rev-parse", "--is-inside-work-tree"], path)
+        if result.returncode == 0:
+            if result.stdout.strip() == "true":
+                return True
+            raise PublicationError("Publication requires a non-bare Git working tree.")
+        if "not a git repository" in result.stderr.casefold():
+            return False
+        raise PublicationError(_command_failure("Git", result))
 
     def _github_repository(self, owner: str, name: str, path: Path) -> dict[str, object]:
         output = self._gh(
@@ -276,6 +322,7 @@ def _plan_signature(plan: PublicationPlan) -> tuple[object, ...]:
         plan.rename_existing_repository,
         plan.existing_remote_url,
         plan.worktree_status,
+        plan.initialize_repository,
     )
 
 
@@ -287,3 +334,14 @@ def _renamed_remote_url(url: str, owner: str, name: str) -> str:
     if match is None:
         raise PublicationError("Origin must be a GitHub repository remote; Repo Curator will not retarget it.")
     return f"{match.group(1)}{owner}/{name}{match.group(2) or ''}"
+
+
+def _initial_worktree_status(path: Path) -> tuple[str, ...]:
+    """Preview the exact files Git would add without initializing a repository."""
+    files: list[str] = []
+    for candidate in sorted(path.rglob("*")):
+        if ".git" in candidate.relative_to(path).parts:
+            continue
+        if candidate.is_file() or candidate.is_symlink():
+            files.append(f"?? {candidate.relative_to(path).as_posix()}")
+    return tuple(files)

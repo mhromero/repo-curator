@@ -109,8 +109,10 @@ note rather than being sent to a worker.
 Automated success only makes the repository ready for final review. A small GitHub
 CLI adapter preflights authenticated access and an existing `origin`, or prepares
 a new personal repository using the human-confirmed R1 name and visibility. The
-guided CLI renders that plan before approval. After approval it may commit all
-reviewed local changes and use a normal non-force push. An authenticated personal
+guided CLI renders that plan before approval. A plain folder is represented as a
+non-mutating initial-Git plan with a `main` branch and exact initial files; only
+approval may initialize it. After approval it may commit all reviewed local changes
+and use a normal non-force push. An authenticated personal
 remote rename is allowed only when its exact before/after identity is shown in
 final review; forks, retargeting, and foreign/organization-owned remotes are
 refused. `FINISHED`

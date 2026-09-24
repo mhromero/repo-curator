@@ -252,6 +252,11 @@ to another user or organization without an explicit, supported ownership path.
 It may rename an existing remote repository only when the final review explicitly
 shows the exact rename and authenticated ownership checks pass.
 
+For a directory that is not yet a local Git repository, final review may propose
+initializing Git on an explicit branch and must list the files that the initial
+commit will contain. `git init`, the initial commit, GitHub repository creation,
+and push occur only after that same explicit final approval.
+
 ### Core workflow states
 
 - `SCANNED`

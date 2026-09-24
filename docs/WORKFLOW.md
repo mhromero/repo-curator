@@ -83,7 +83,9 @@ The worker may reason and edit, but the human controls factual claims, risky cha
     for explicit approval. It commits reviewed changes and performs a normal
     non-force push only after approval. When an authenticated personal `origin`
     has the old local name, the review also shows the exact remote rename before
-    it can occur.
+    it can occur. For a plain local folder, the review instead shows the planned
+    `main` branch initialization and exact initial-commit files; Git is not
+    initialized until approval.
 
     A final-review decline with requested changes returns to `EDITING` and resumes
     the existing Codex context. A decline without requested changes remains at

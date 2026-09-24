@@ -33,7 +33,9 @@ use should not require knowledge of the internal state machine.
   the exact GitHub target, visibility, branch, and reviewed Git changes before
   asking for publication approval.
 - Do not run Git or GitHub mutating commands until that final approval. Explain
-  when a new repository will be created and that pushes are non-force.
+  when a new repository will be created and that pushes are non-force. For a
+  folder without Git metadata, explicitly show the planned Git initialization
+  branch and initial-commit files before asking for that approval.
 - A nonblank final-review decline is a requested repository revision: persist the
   note, offer confirmation of one unambiguous R1-shaped replacement name mentioned
   in that note, and resume the same Codex editing context. It does not ask about

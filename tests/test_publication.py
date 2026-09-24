@@ -54,6 +54,39 @@ def test_publisher_requires_visibility_before_creating_a_new_repository(tmp_path
         publisher.prepare(tmp_path, expected_name="vgtu-2024-intelligent-systems", visibility=None)
 
 
+def test_publisher_initializes_plain_folder_only_during_approved_publish(tmp_path: Path) -> None:
+    (tmp_path / "README.md").write_text("# Sample\n", encoding="utf-8")
+    runner = FakeRunner(
+        {
+            ("git", "rev-parse", "--is-inside-work-tree"): [
+                (128, "", "fatal: not a git repository"),
+                (128, "", "fatal: not a git repository"),
+            ],
+            ("gh", "auth", "status", "--hostname", "github.com"): [(0, "", ""), (0, "", "")],
+            ("gh", "api", "user", "--jq", ".login"): [(0, "maria\n", ""), (0, "maria\n", "")],
+            ("git", "init", "--initial-branch", "main"): [(0, "", "")],
+            ("git", "add", "-A"): [(0, "", "")],
+            ("git", "commit", "-m", "Prepare repository for publication"): [(0, "", "")],
+            ("git", "rev-parse", "HEAD"): [(0, "abc123\n", "")],
+            ("git", "push", "origin", "HEAD:refs/heads/main"): [(0, "", "")],
+        }
+    )
+    publisher = GitHubCliPublisher(runner=runner)
+
+    plan = publisher.prepare(tmp_path, expected_name="vgtu-2024-intelligent-systems", visibility="public")
+
+    assert plan.initialize_repository is True
+    assert plan.branch == "main"
+    assert plan.worktree_status == ("?? README.md",)
+    assert ("git", "init", "--initial-branch", "main") not in runner.calls
+
+    publisher.publish(plan)
+
+    assert ("git", "init", "--initial-branch", "main") in runner.calls
+    assert ("git", "add", "-A") in runner.calls
+    assert ("git", "push", "origin", "HEAD:refs/heads/main") in runner.calls
+
+
 def test_publisher_refuses_foreign_existing_remote_before_git_mutation(tmp_path: Path) -> None:
     responses = _existing_repository_responses(
         remote="git@github.com:course-org/vgtu-2024-intelligent-systems.git",

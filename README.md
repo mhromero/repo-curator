@@ -96,8 +96,11 @@ or publish. `VERIFIED` and `PARTIALLY_VERIFIED` reach
 review, the guided command shows the validation outcome, unresolved concerns,
 GitHub target, visibility, branch, and exact Git changes. Approval commits those
 reviewed changes and performs a normal non-force push. It creates a missing
-repository only for the authenticated GitHub user, never renames or retargets an
-existing remote without showing it in final review, and refuses forks or
+repository only for the authenticated GitHub user. For a plain local folder, the
+same final review explicitly shows that it will initialize Git on `main` and lists
+the files for its initial commit; no `git init` occurs before approval. Repo
+Curator never renames or retargets an existing remote without showing it in final
+review, and refuses forks or
 foreign/organization-owned remotes.
 
 Declining final publication with a requested repository change resumes the same

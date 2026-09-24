@@ -7,6 +7,7 @@ from typer.testing import CliRunner
 
 from repo_curator.cli import (
     _format_git_status_line,
+    _print_final_review,
     _prompt_updated_repository_name,
     _retire_resolved_local_naming_concerns,
     app,
@@ -113,6 +114,33 @@ def test_git_status_is_rendered_in_plain_language() -> None:
     assert _format_git_status_line("?? README.md") == "Untracked: README.md"
     assert _format_git_status_line(" M README.md") == "Modified: README.md"
     assert _format_git_status_line("A  .gitignore") == "Added to index: .gitignore"
+
+
+def test_final_review_shows_plain_folder_git_initialization(tmp_path: Path, capsys) -> None:
+    repository = tmp_path / "vgtu-2024-intelligent-systems"
+    repository.mkdir()
+    run = RepositoryRun(id="g" * 32, repository_profile=scan_repository(repository).repository_profile)
+    plan = PublicationPlan(
+        repository_path=repository,
+        owner="maria",
+        name="vgtu-2024-intelligent-systems",
+        branch="main",
+        visibility="public",
+        remote_name=None,
+        create_repository=True,
+        existing_repository_name=None,
+        rename_existing_repository=False,
+        existing_remote_url=None,
+        worktree_status=("?? README.md",),
+        initialize_repository=True,
+    )
+
+    _print_final_review(run, plan)
+
+    output = capsys.readouterr().out
+    assert 'Local Git: initialize a new repository on branch "main"' in output
+    assert "Initial commit files:" in output
+    assert "- Untracked: README.md" in output
 
 
 def test_resolved_local_naming_concern_is_not_carried_into_final_review(tmp_path: Path) -> None:

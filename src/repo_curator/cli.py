@@ -1317,6 +1317,8 @@ def _print_final_review(run, plan) -> None:
     typer.echo(f"GitHub repository: {plan.repository}")
     typer.echo(f"Visibility: {plan.visibility}")
     typer.echo(f"Branch to push: {plan.branch}")
+    if plan.initialize_repository:
+        typer.echo(f'Local Git: initialize a new repository on branch "{plan.branch}"')
     typer.echo(
         "Repository target: "
         + ("create a new repository" if plan.create_repository else "use existing origin")
@@ -1325,7 +1327,7 @@ def _print_final_review(run, plan) -> None:
         typer.echo(
             f"Remote rename: {plan.owner}/{plan.existing_repository_name} → {plan.repository}"
         )
-    typer.echo("Reviewed Git changes:")
+    typer.echo("Reviewed Git changes:" if not plan.initialize_repository else "Initial commit files:")
     if plan.worktree_status:
         for line in plan.worktree_status:
             typer.echo(f"- {_format_git_status_line(line)}")
