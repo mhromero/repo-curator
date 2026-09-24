@@ -71,9 +71,11 @@ uv run --frozen repo-curator run /path/to/repository
 The guided command prompts for required A/B/C classification and worker-requested
 facts, routes, launches read-only inspection, presents the inspection plan and
 R2 approvals, then resumes the same Codex thread for the approved edit scope. It
-stops at `WAITING_EDIT_REVIEW` after showing the structured edit report and Git
-change summary; validation is not implemented. Re-running the same command
-resumes the most recently updated unfinished run for that repository.
+shows the structured edit report and Git change summary, then asks the human to
+approve the edits or request a revision. Approval records `VALIDATING`, but does
+not run validation yet; rejection resumes the same worker context with the
+requested changes. Re-running the same command resumes the most recently updated
+unfinished run for that repository.
 
 When declining an R2 approval request, the guided prompt accepts an optional
 explanation. The explanation is persisted with the decision and is supplied to

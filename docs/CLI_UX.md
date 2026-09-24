@@ -21,6 +21,8 @@ use should not require knowledge of the internal state machine.
   persisted constraint to the resumed worker context.
 - Show inspection findings and proposed work before inspection approval.
 - Show actual repository changes before edit approval.
+- At edit review, let the human approve the completed edits or describe a
+  revision; an approved review may advance to a later unimplemented phase.
 - Resume the existing worker context when continuing worker work.
 - Never require the user to manually copy worker output, IDs, or structured
   state between commands.

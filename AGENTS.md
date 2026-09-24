@@ -71,12 +71,13 @@ is not configured because this project has no API Platform credentials.
 
 Use `uv run --frozen repo-curator run <path>` for the normal guided experience:
 it starts or resumes the latest unfinished run for the target path through the
-implemented edit-review gate. Keep `run continue <run-id>`, `run input`,
+implemented edit-review decision. Keep `run continue <run-id>`, `run input`,
 `run classify`, and `run answer` available for non-interactive use and recovery.
 
 The guided command collects A/B/C, routes, runs read-only inspection through fact
 requests, presents the inspection plan and R2 approvals, then starts only the
-approved editing scope. It stops at edit review; do not add validation here.
+approved editing scope and collects the edit-review decision. It then stops at
+`VALIDATING`; do not add validation here.
 
 Phases:
 

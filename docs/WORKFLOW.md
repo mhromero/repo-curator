@@ -56,9 +56,11 @@ The worker may reason and edit, but the human controls factual claims, risky cha
 8. EDIT REVIEW
    Human reviews the actual diff and requests changes or approves.
 
-   Implemented: editing returns a structured `EditReport` and stops in
-   `WAITING_EDIT_REVIEW`. A newly discovered R2 action creates a pending approval
-   and stops in `WAITING_APPROVAL` instead.
+   Implemented: the guided CLI renders the structured `EditReport` and Git
+   change summary, then asks the human to approve or request a revision. Approval
+   records `VALIDATING` without running validation; rejection resumes the same
+   worker context in `EDITING`. A newly discovered R2 action creates a pending
+   approval and stops in `WAITING_APPROVAL` instead.
 
 9. VALIDATE
    Deterministic checks establish what actually works.
@@ -80,8 +82,10 @@ The worker may reason and edit, but the human controls factual claims, risky cha
 `TriageResult` outside the target repository. It displays R4 clarification signals
 without creating fact requests, then collects A/B/C and any worker-requested facts
 as needed. It presents inspection findings and approval requests in readable form,
-resumes the persisted worker context for approved editing, and stops at
-`WAITING_EDIT_REVIEW`. `run start` and `run classify` remain available for scripting.
+resumes the persisted worker context for approved editing, then presents the edit
+result for approval or revision. An approved edit review reaches `VALIDATING`,
+without running validation yet. `run start` and `run classify` remain available for
+scripting.
 Inspection may later add concrete required fact requests, which resume the same
 Codex inspection context once answered.
 

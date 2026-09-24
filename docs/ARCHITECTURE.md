@@ -67,7 +67,7 @@ INSPECT -> human review -> EDIT -> human review
                                   DIAGNOSE
 ```
 
-Inspection is implemented and read-only. Editing is implemented only for the approved plan and R2 authority, then stops for edit review. Diagnosis is invoked only when deterministic validation produces a failure requiring reasoning.
+Inspection is implemented and read-only. Editing is implemented only for the approved plan and R2 authority, then enters an explicit human edit review. The guided CLI either resumes the same context for a requested revision or records `VALIDATING` after approval; it does not run validation yet. Diagnosis is invoked only when deterministic validation produces a failure requiring reasoning.
 
 Specialization comes from prompts and phase boundaries, not separate agents that reread the repository.
 

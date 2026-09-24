@@ -305,7 +305,7 @@ def test_guided_run_completes_approved_edit_and_resumes_by_repository_path(
             "--codex-bin",
             str(executable),
         ],
-        input="B\ny\ny\n",
+        input="B\ny\ny\ny\n",
     )
 
     run = RunStore(state_root).latest_active_for_repository(repository)
@@ -316,9 +316,10 @@ def test_guided_run_completes_approved_edit_and_resumes_by_repository_path(
     assert "Approve this inspection plan?" in result.stdout
     assert "Resuming Codex thread thread-123 with workspace-write access." in result.stdout
     assert "Edit report" in result.stdout
-    assert "State: WAITING_EDIT_REVIEW" in result.stdout
+    assert "Approve these edits?" in result.stdout
+    assert "Edits approved. Deterministic validation has not been implemented" in result.stdout
     assert run is not None
-    assert run.state.value == "WAITING_EDIT_REVIEW"
+    assert run.state.value == "VALIDATING"
     assert run.worker_runtime is not None
     assert run.worker_runtime.edit_attempts == 1
     assert (repository / "README.md").read_text(encoding="utf-8") == "# Updated by fake Codex\n"
@@ -331,7 +332,7 @@ def test_guided_run_completes_approved_edit_and_resumes_by_repository_path(
     assert resumed.exit_code == 0
     assert "Resuming run for" in resumed.stdout
     assert "Scanning..." not in resumed.stdout
-    assert "Edits are ready for human review." in resumed.stdout
+    assert "Deterministic validation has not been implemented" in resumed.stdout
 
 
 def test_guided_run_renders_r2_approval_before_editing(tmp_path: Path, monkeypatch) -> None:
@@ -374,7 +375,7 @@ def test_guided_run_renders_r2_approval_before_editing(tmp_path: Path, monkeypat
             "--codex-bin",
             str(executable),
         ],
-        input="B\ny\ny\ny\n",
+        input="B\ny\ny\ny\ny\n",
     )
 
     assert result.exit_code == 0
@@ -382,7 +383,8 @@ def test_guided_run_renders_r2_approval_before_editing(tmp_path: Path, monkeypat
     assert "Proposed change: Move the package into src/." in result.stdout
     assert "Expected behavior change: Existing imports may need updates." in result.stdout
     assert "Approved." in result.stdout
-    assert "State: WAITING_EDIT_REVIEW" in result.stdout
+    assert "Approve these edits?" in result.stdout
+    assert "State: VALIDATING" in result.stdout
 
 
 def test_guided_rejection_collects_an_explanation_for_the_worker(tmp_path: Path, monkeypatch) -> None:
@@ -426,14 +428,66 @@ def test_guided_rejection_collects_an_explanation_for_the_worker(tmp_path: Path,
             "--codex-bin",
             str(executable),
         ],
-        input="B\ny\ny\nn\nKeep the existing import paths.\ny\n",
+        input="B\ny\ny\nn\nKeep the existing import paths.\ny\ny\n",
     )
 
     assert result.exit_code == 0
     assert "Why are you declining this change? (optional)" in result.stdout
     assert "Describe the required plan changes" not in result.stdout
     assert "Resuming read-only Codex thread thread-123" in result.stdout
-    assert "State: WAITING_EDIT_REVIEW" in result.stdout
+    assert "State: VALIDATING" in result.stdout
+
+
+def test_guided_edit_rejection_requests_a_revision_in_the_same_worker_context(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repository = tmp_path / "sample-project"
+    repository.mkdir()
+    (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
+    scan_result = scan_repository(repository)
+    triage_result = _triage_result(scan_result.triage_summary)
+    monkeypatch.setattr("repo_curator.cli.scan_repository", lambda _path: scan_result)
+    monkeypatch.setattr("repo_curator.cli.triage_summary", lambda *_args, **_kwargs: triage_result)
+    monkeypatch.setenv(
+        "FAKE_CODEX_EDIT_REPORT",
+        json.dumps(
+            {
+                "modified_files": ["README.md"],
+                "unresolved_concerns": ["No tests have been run."],
+            }
+        ),
+    )
+    executable = _fake_codex(tmp_path)
+    state_root = tmp_path / "state"
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            str(repository),
+            "--state-root",
+            str(state_root),
+            "--codex-bin",
+            str(executable),
+        ],
+        input="B\ny\ny\nn\nKeep the existing README heading.\ny\n",
+    )
+
+    run = RunStore(state_root).latest_active_for_repository(repository)
+    assert result.exit_code == 0
+    assert "Unresolved concerns:" in result.stdout
+    assert "Source code changed: no" in result.stdout
+    assert "Describe the required edit changes" in result.stdout
+    assert "Edit changes requested; resuming the existing Codex worker context." in result.stdout
+    assert result.stdout.count("workspace-write access") == 2
+    assert run is not None
+    assert run.state.value == "VALIDATING"
+    assert run.edit_review is not None
+    assert run.edit_review.outcome == "approved"
+    assert run.worker_runtime is not None
+    assert run.worker_runtime.edit_attempts == 2
 
 
 def test_interactive_run_start_answers_worker_facts_and_resumes_thread(

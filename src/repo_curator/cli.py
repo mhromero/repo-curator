@@ -788,10 +788,15 @@ def _drive_guided_workflow(
             continue
 
         if run.state == WorkflowState.WAITING_EDIT_REVIEW:
-            _print_edit_report(run)
-            _print_repository_change_summary(Path(run.repository_profile.identity.path))
-            typer.echo("Edits are ready for human review.")
-            typer.echo("This R8 milestone stops at WAITING_EDIT_REVIEW; validation is not run.")
+            _review_edit_result(store, run)
+            if run.state == WorkflowState.VALIDATING:
+                typer.echo("Edits approved. Deterministic validation has not been implemented, so it was not run.")
+                typer.echo(f"State: {run.state.value}")
+                return
+            continue
+
+        if run.state == WorkflowState.VALIDATING:
+            typer.echo("Edit review has been approved. Deterministic validation has not been implemented, so it was not run.")
             typer.echo(f"State: {run.state.value}")
             return
 
@@ -815,6 +820,19 @@ def _review_inspection_plan(store: RunStore, run) -> None:
     else:
         request_inspection_changes(run, _prompt_review_notes("Describe the required plan changes"))
         typer.echo("Inspection changes requested.")
+    store.save(run)
+
+
+def _review_edit_result(store: RunStore, run) -> None:
+    _print_edit_report(run)
+    _print_repository_change_summary(Path(run.repository_profile.identity.path))
+    typer.echo("Review the actual repository changes above before deciding.")
+    if typer.confirm("Approve these edits?", default=False):
+        approve_edit(run)
+        typer.echo("Edits approved.")
+    else:
+        request_edit_changes(run, _prompt_review_notes("Describe the required edit changes"))
+        typer.echo("Edit changes requested; resuming the existing Codex worker context.")
     store.save(run)
 
 
