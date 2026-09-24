@@ -1,6 +1,6 @@
 # Workflow
 
-The implemented CLI supports offline scanning, TypeSafe triage, persisted R5 human-review gates, and deterministic R6 initial routing. Codex execution, validation, and publishing are not implemented.
+The implemented CLI supports offline scanning, TypeSafe triage, persisted R5 human-review gates, deterministic R6 initial routing, and R7 read-only Codex inspection. Editing, validation, and publishing are not implemented.
 
 ## Principle
 
@@ -22,7 +22,8 @@ The worker may reason and edit, but the human controls factual claims, risky cha
 3. CLARIFY
    Persist the human portfolio value A/B/C and any confirmed facts.
 
-   Implemented by `repo-curator run start`, `run classify`, and `run answer`.
+   Implemented by `repo-curator run input <run-id>` for a batched interactive
+   prompt, with `run classify` and `run answer` retained for scripting.
    R4 clarification `Noul` probabilities are advisory signals displayed to the
    human. They do not currently create `FactRequest` records; A/B/C is the only
    mandatory initial input. Automatic conversion is deferred until evaluation data
@@ -35,6 +36,8 @@ The worker may reason and edit, but the human controls factual claims, risky cha
 5. INSPECT
    Codex reads the repository and proposes a concrete plan.
    No substantive edits.
+
+   Implemented by `repo-curator run inspection execute <run-id>` after routing.
 
 6. INSPECTION REVIEW
    Human approves/modifies the plan and resolves approvals.
@@ -71,8 +74,9 @@ concrete required fact requests.
 the state to resume. `WAITING_APPROVAL` means a concrete R2 approval request is
 pending. They are distinct states and neither action can substitute for the other.
 
-The state functions and CLI can record structured inspection and edit reports from
-a future worker or manual process. They enforce these boundaries:
+R7 launches inspection through one persisted Codex thread and records a schema-valid
+report. It receives the compact R3–R6 context and confirmed facts; a worker failure
+stays in `INSPECTING` for retry. The state functions and CLI enforce these boundaries:
 
 - inspection reports lead to `WAITING_INSPECTION_REVIEW` unless they introduce a required fact;
 - accepted inspection plans with pending R2 requests lead to `WAITING_APPROVAL`;

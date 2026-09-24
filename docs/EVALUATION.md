@@ -2,11 +2,11 @@
 
 Repo Curator should be evaluated as a workflow, not only as a Python program.
 
-The current implementation includes the static scanner, TypeSafe/Jev triage, deterministic R5 run-state transitions, and deterministic R6 route/escalation policy. Codex execution and validation have not been implemented or evaluated.
+The current implementation includes the static scanner, TypeSafe/Jev triage, deterministic R5 run-state transitions, deterministic R6 route/escalation policy, and a fake-tested R7 Codex CLI inspection adapter. Editing and validation have not been implemented or evaluated.
 
 ## Unit tests
 
-The current suite has forty-five deterministic tests covering scanner inventory and language signals, ignored directories, non-execution, R3 evidence, summary redaction and budgeting, local Git metadata, symlinks, TypeSafe question construction, provider response validation, mocked CLI output, R5 state transitions, approval boundaries, persistence, R6 work-depth/model/effort routing, model configuration, and escalation policy. It makes no paid TypeSafe or Codex calls.
+The current suite has fifty-four deterministic tests covering scanner inventory and language signals, ignored directories, non-execution, R3 evidence, summary redaction and budgeting, local Git metadata, symlinks, TypeSafe question construction, provider response validation, mocked CLI output, batched human input, R5 state transitions, approval boundaries, persistence, R6 work-depth/model/effort routing, model configuration, escalation policy, and R7 Codex CLI command/output/failure handling. It uses a fake Codex executable and makes no paid TypeSafe or Codex calls.
 
 Future unit-test coverage should include:
 
@@ -15,6 +15,7 @@ Future unit-test coverage should include:
 - router requires a concrete escalation reason;
 - routing policy is calibrated against real model-family and reasoning-effort outcomes;
 - invalid provider responses are rejected;
+- a real, authenticated Codex inspection produces a useful report without modifying the target;
 - state transitions require human checkpoints;
 - validator detects missing required README information;
 - target repositories never receive internal Repo Curator state.

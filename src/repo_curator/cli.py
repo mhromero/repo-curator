@@ -5,8 +5,9 @@ from typing import Annotated
 
 import typer
 
+from .codex_worker import CodexCliWorker
 from .run_store import RunStore
-from .routing import RoutingConfig, RoutingError
+from .routing import RoutingConfig, RoutingError, migrate_legacy_provider_model
 from .scanner import scan_repository
 from .triage import TriageProviderError, triage_repository, triage_summary
 from .workflow import (
@@ -18,7 +19,10 @@ from .workflow import (
     approve_final_review,
     approve_inspection,
     begin_inspection,
+    begin_worker_inspection,
     decide_approval,
+    record_worker_inspection_failure,
+    record_worker_inspection_success,
     record_edit_report,
     record_fact,
     record_inspection_report,
@@ -28,6 +32,7 @@ from .workflow import (
     set_portfolio_classification,
     start_run,
 )
+from .worker import WorkerRuntimeError, build_inspection_request
 
 app = typer.Typer(no_args_is_help=True, help="Inspect a repository without modifying it.")
 run_app = typer.Typer(no_args_is_help=True, help="Manage a persisted human-review workflow run.")
@@ -249,6 +254,42 @@ def run_facts(
     _print_pending_input(run)
 
 
+@run_app.command("input")
+def run_input(
+    run_id: str = typer.Argument(..., help="Persisted run identifier."),
+    state_root: StateRootOption = None,
+) -> None:
+    store = RunStore(state_root)
+    run = _load_run_or_exit(store, run_id)
+    if not run.has_pending_input:
+        _workflow_error_and_exit(WorkflowError("This run has no pending human input."))
+
+    classification = run.portfolio_classification
+    if classification is None:
+        classification = _prompt_portfolio_classification()
+
+    responses: dict[str, str] = {}
+    for request in run.pending_fact_requests:
+        responses[request.key] = _prompt_required_fact(request.key, request.prompt)
+
+    response_count = len(responses) + (1 if run.portfolio_classification is None else 0)
+    if not typer.confirm(f"Save {response_count} human response(s)?", default=True):
+        typer.echo("No human input was saved.")
+        return
+
+    try:
+        if run.portfolio_classification is None:
+            set_portfolio_classification(run, classification)
+        for key, value in responses.items():
+            record_fact(run, key, value)
+        store.save(run)
+    except WorkflowError as error:
+        _workflow_error_and_exit(error)
+    typer.echo(f"Saved {response_count} human response(s).")
+    typer.echo(f"State: {run.state.value}")
+    _print_pending_input(run)
+
+
 @run_app.command("answer")
 def run_answer(
     run_id: str = typer.Argument(..., help="Persisted run identifier."),
@@ -321,6 +362,59 @@ def inspection_begin(
     except WorkflowError as error:
         _workflow_error_and_exit(error)
     typer.echo("State: INSPECTING")
+
+
+@inspection_app.command("execute")
+def inspection_execute(
+    run_id: str = typer.Argument(..., help="Persisted run identifier."),
+    state_root: StateRootOption = None,
+    codex_bin: str = typer.Option("codex", "--codex-bin", help="Codex CLI executable."),
+) -> None:
+    store = RunStore(state_root)
+    run = _load_run_or_exit(store, run_id)
+    worker = CodexCliWorker(codex_bin)
+    try:
+        if run.routing_decision is not None:
+            migrate_legacy_provider_model(run.routing_decision, RoutingConfig.from_environment())
+        begin_worker_inspection(run, worker.backend)
+        request = build_inspection_request(run)
+        store.save(run)
+    except (ValueError, WorkflowError) as error:
+        _workflow_error_and_exit(error)
+
+    resume_thread_id = run.worker_runtime.thread_id if run.worker_runtime else None
+    try:
+        result = worker.inspect(request, resume_thread_id=resume_thread_id)
+    except WorkerRuntimeError as error:
+        record_worker_inspection_failure(
+            run,
+            str(error),
+            thread_id=error.thread_id,
+            input_tokens=error.usage.input_tokens,
+            cached_input_tokens=error.usage.cached_input_tokens,
+            output_tokens=error.usage.output_tokens,
+            reasoning_output_tokens=error.usage.reasoning_output_tokens,
+        )
+        store.save(run)
+        _workflow_error_and_exit(error)
+
+    try:
+        record_worker_inspection_success(
+            run,
+            thread_id=result.thread_id,
+            input_tokens=result.usage.input_tokens,
+            cached_input_tokens=result.usage.cached_input_tokens,
+            output_tokens=result.usage.output_tokens,
+            reasoning_output_tokens=result.usage.reasoning_output_tokens,
+        )
+        record_inspection_report(run, result.report)
+        store.save(run)
+    except WorkflowError as error:
+        _workflow_error_and_exit(error)
+
+    typer.echo(f"Codex thread: {result.thread_id}")
+    typer.echo(f"State: {run.state.value}")
+    _print_pending_input(run)
 
 
 @inspection_app.command("record")
@@ -468,6 +562,23 @@ def _load_run_or_exit(store: RunStore, run_id: str):
 def _workflow_error_and_exit(error: Exception) -> None:
     typer.echo(f"Workflow failed: {error}", err=True)
     raise typer.Exit(code=1) from error
+
+
+def _prompt_portfolio_classification() -> PortfolioClassification:
+    while True:
+        value = typer.prompt("Portfolio classification (A = showcase, B = coursework, C = archive)")
+        try:
+            return PortfolioClassification(value.strip().upper())
+        except ValueError:
+            typer.echo("Enter A, B, or C.", err=True)
+
+
+def _prompt_required_fact(key: str, prompt: str) -> str:
+    while True:
+        value = typer.prompt(f"{key}: {prompt}").strip()
+        if value:
+            return value
+        typer.echo("A response is required. Use 'not applicable' when that is the answer.", err=True)
 
 
 def _print_pending_input(run) -> None:

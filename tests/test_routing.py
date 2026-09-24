@@ -22,6 +22,7 @@ from repo_curator.routing import (
     WorkDepth,
     WorkerConfiguration,
     evaluate_escalation,
+    migrate_legacy_provider_model,
     route_repository,
 )
 from repo_curator.run_store import RunStore
@@ -105,6 +106,20 @@ def test_configuration_can_resolve_the_same_policy_intent_to_another_family(
     assert decision.capability_cost_class == CapabilityCostClass.ECONOMY
     assert decision.model_family == "terra"
     assert decision.reasoning_effort == ReasoningEffort.MEDIUM
+
+
+def test_legacy_provider_model_is_migrated_to_current_configuration(tmp_path: Path) -> None:
+    profile, triage_result = _scan_and_triage(tmp_path)
+    config = RoutingConfig.from_environment()
+    decision = route_repository(profile, triage_result, PortfolioClassification.B, config)
+    decision.provider_model = "Luna"
+
+    migrated = migrate_legacy_provider_model(decision, config)
+
+    assert migrated is True
+    assert decision.provider_model == "gpt-5.6-luna"
+    assert "legacy_provider_model_migrated" in decision.reason_codes
+    assert migrate_legacy_provider_model(decision, config) is False
 
 
 def test_initial_routing_rejects_a_configuration_that_selects_sol(tmp_path: Path) -> None:

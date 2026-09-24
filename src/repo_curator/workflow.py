@@ -119,6 +119,21 @@ class StateTransition(BaseModel):
     occurred_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
+class WorkerRuntime(BaseModel):
+    backend: str
+    thread_id: str | None = None
+    provider_model: str
+    reasoning_effort: str
+    inspection_attempts: int = 0
+    last_error: str | None = None
+    last_started_at: datetime | None = None
+    last_completed_at: datetime | None = None
+    input_tokens: int | None = None
+    cached_input_tokens: int | None = None
+    output_tokens: int | None = None
+    reasoning_output_tokens: int | None = None
+
+
 class RepositoryRun(BaseModel):
     id: str
     repository_profile: RepositoryProfile
@@ -134,6 +149,7 @@ class RepositoryRun(BaseModel):
     edit_review: ReviewDecision | None = None
     final_review: FinalReview | None = None
     routing_decision: RoutingDecision | None = None
+    worker_runtime: WorkerRuntime | None = None
     escalations: list[EscalationRecord] = Field(default_factory=list)
     transitions: list[StateTransition] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -212,6 +228,82 @@ def begin_inspection(run: RepositoryRun) -> None:
     if run.has_pending_input:
         raise WorkflowError("Human facts and portfolio classification must be confirmed first.")
     _transition(run, WorkflowState.INSPECTING, "begin_inspection")
+
+
+def begin_worker_inspection(run: RepositoryRun, backend: str) -> None:
+    if run.routing_decision is None:
+        raise WorkflowError("A routing decision is required before launching a worker.")
+    if run.state == WorkflowState.TRIAGED:
+        begin_inspection(run)
+    elif run.state != WorkflowState.INSPECTING or run.inspection_report is not None:
+        raise WorkflowError("Worker inspection can only start from TRIAGED or retry an incomplete INSPECTING run.")
+
+    runtime = run.worker_runtime
+    if runtime is None:
+        runtime = WorkerRuntime(
+            backend=backend,
+            provider_model=run.routing_decision.provider_model,
+            reasoning_effort=run.routing_decision.reasoning_effort.value,
+        )
+        run.worker_runtime = runtime
+    elif runtime.backend != backend:
+        raise WorkflowError("The existing worker runtime uses a different backend.")
+
+    runtime.provider_model = run.routing_decision.provider_model
+    runtime.reasoning_effort = run.routing_decision.reasoning_effort.value
+    runtime.inspection_attempts += 1
+    runtime.last_error = None
+    runtime.last_started_at = datetime.now(UTC)
+    _touch(run)
+
+
+def record_worker_inspection_failure(
+    run: RepositoryRun,
+    message: str,
+    *,
+    thread_id: str | None = None,
+    input_tokens: int | None = None,
+    cached_input_tokens: int | None = None,
+    output_tokens: int | None = None,
+    reasoning_output_tokens: int | None = None,
+) -> None:
+    _require_state(run, WorkflowState.INSPECTING)
+    runtime = _worker_runtime_or_error(run)
+    runtime.thread_id = thread_id or runtime.thread_id
+    runtime.last_error = message
+    runtime.last_completed_at = datetime.now(UTC)
+    _record_worker_usage(
+        runtime,
+        input_tokens=input_tokens,
+        cached_input_tokens=cached_input_tokens,
+        output_tokens=output_tokens,
+        reasoning_output_tokens=reasoning_output_tokens,
+    )
+    _touch(run)
+
+
+def record_worker_inspection_success(
+    run: RepositoryRun,
+    *,
+    thread_id: str,
+    input_tokens: int | None = None,
+    cached_input_tokens: int | None = None,
+    output_tokens: int | None = None,
+    reasoning_output_tokens: int | None = None,
+) -> None:
+    _require_state(run, WorkflowState.INSPECTING)
+    runtime = _worker_runtime_or_error(run)
+    runtime.thread_id = thread_id
+    runtime.last_error = None
+    runtime.last_completed_at = datetime.now(UTC)
+    _record_worker_usage(
+        runtime,
+        input_tokens=input_tokens,
+        cached_input_tokens=cached_input_tokens,
+        output_tokens=output_tokens,
+        reasoning_output_tokens=reasoning_output_tokens,
+    )
+    _touch(run)
 
 
 def route_run(run: RepositoryRun, config: RoutingConfig) -> RoutingDecision:
@@ -380,3 +472,23 @@ def _transition(run: RepositoryRun, target: WorkflowState, action: str) -> None:
 
 def _touch(run: RepositoryRun) -> None:
     run.updated_at = datetime.now(UTC)
+
+
+def _worker_runtime_or_error(run: RepositoryRun) -> WorkerRuntime:
+    if run.worker_runtime is None:
+        raise WorkflowError("No worker runtime has been started.")
+    return run.worker_runtime
+
+
+def _record_worker_usage(
+    runtime: WorkerRuntime,
+    *,
+    input_tokens: int | None,
+    cached_input_tokens: int | None,
+    output_tokens: int | None,
+    reasoning_output_tokens: int | None,
+) -> None:
+    runtime.input_tokens = input_tokens
+    runtime.cached_input_tokens = cached_input_tokens
+    runtime.output_tokens = output_tokens
+    runtime.reasoning_output_tokens = reasoning_output_tokens

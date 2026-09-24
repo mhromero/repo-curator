@@ -60,6 +60,17 @@ When working on Jev integration:
 
 The preferred design is one persistent Codex context per target repository.
 
+R7 uses the local Codex CLI through `CodexCliWorker`; authenticate with `codex login` and launch inspection with
+`uv run --frozen repo-curator run inspection execute <run-id>`. It must use the
+R6 route, `codex exec` read-only sandboxing, JSONL events, and the existing
+`InspectionReport` schema. Unit tests must use a fake executable and never launch
+an authenticated Codex worker. The Agents SDK is not configured because this
+project has no API Platform credentials.
+
+Use `uv run --frozen repo-curator run input <run-id>` for batched interactive
+portfolio classification and pending fact collection. Keep `run classify` and
+`run answer` available for non-interactive use.
+
 Phases:
 
 1. read-only inspection;

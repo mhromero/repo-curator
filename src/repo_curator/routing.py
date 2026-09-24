@@ -142,17 +142,17 @@ class RoutingConfig(BaseModel):
             model_families={
                 "luna": ModelFamilyConfig(
                     key="luna",
-                    provider_model=os.environ.get("REPO_CURATOR_LUNA_MODEL", "Luna"),
+                    provider_model=os.environ.get("REPO_CURATOR_LUNA_MODEL", "gpt-5.6-luna"),
                     supported_efforts=efforts,
                 ),
                 "terra": ModelFamilyConfig(
                     key="terra",
-                    provider_model=os.environ.get("REPO_CURATOR_TERRA_MODEL", "Terra"),
+                    provider_model=os.environ.get("REPO_CURATOR_TERRA_MODEL", "gpt-5.6-terra"),
                     supported_efforts=efforts,
                 ),
                 "sol": ModelFamilyConfig(
                     key="sol",
-                    provider_model=os.environ.get("REPO_CURATOR_SOL_MODEL", "Sol"),
+                    provider_model=os.environ.get("REPO_CURATOR_SOL_MODEL", "gpt-5.6-sol"),
                     supported_efforts=efforts,
                     initially_selectable=False,
                 ),
@@ -187,6 +187,13 @@ class RoutingDecision(BaseModel):
     reason_codes: list[str] = Field(default_factory=list)
     escalation_policy: list[str] = Field(default_factory=list)
     routed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+_LEGACY_PROVIDER_MODELS = {
+    "luna": "Luna",
+    "terra": "Terra",
+    "sol": "Sol",
+}
 
 
 class EscalationRequest(BaseModel):
@@ -323,6 +330,21 @@ def evaluate_escalation(
         reason_code="concrete_blocker_accepted",
         resolved_configuration=target,
     )
+
+
+def migrate_legacy_provider_model(
+    decision: RoutingDecision,
+    config: RoutingConfig,
+) -> bool:
+    legacy_model = _LEGACY_PROVIDER_MODELS.get(decision.model_family)
+    if legacy_model is None or decision.provider_model != legacy_model:
+        return False
+    family = config.model_families.get(decision.model_family)
+    if family is None:
+        return False
+    decision.provider_model = family.provider_model
+    decision.reason_codes.append("legacy_provider_model_migrated")
+    return True
 
 
 def _work_depth(
