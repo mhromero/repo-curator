@@ -102,8 +102,9 @@ foreign/organization-owned remotes.
 
 Declining final publication with a requested repository change resumes the same
 Codex editing context. The guided prompt can also replace the confirmed R1
-repository name; it does not infer a replacement from free-form feedback. A
-blank final decline simply stops publication at `READY_FOR_FINAL_REVIEW`.
+repository name: when feedback contains one distinct R1-shaped name, it asks for
+confirmation rather than requiring the name to be entered again. A blank final
+decline simply stops publication at `READY_FOR_FINAL_REVIEW`.
 
 Use `run start`, `run continue`, and the phase commands when you need separate,
 scriptable, debugging, or recovery steps. For example:
@@ -165,6 +166,15 @@ uv run --frozen repo-curator run continue <run-id>
 The worker receives the approved inspection plan, confirmed facts, and only R2 requests that were explicitly approved. It runs with Codex `workspace-write` sandbox access, may make safe changes within that scope, and must return a schema-valid `EditReport`. The run then stops at `WAITING_EDIT_REVIEW`; no validation runs yet. If the worker discovers a new R2 action, it records an approval request and stops in `WAITING_APPROVAL`. Decide it with `run approval decide`, then use `run continue <run-id>` again. `run edit execute <run-id>` is available for scriptable execution.
 
 The current runtime is the locally authenticated Codex CLI. An OpenAI Agents SDK adapter remains a possible future backend, but it is not installed or selected because it requires separately billed API Platform credentials, which are not configured for this project.
+
+### Worker prompt assets
+
+The canonical worker instructions are the packaged Markdown files in
+`src/repo_curator/prompts/`. `CodexCliWorker` renders exactly one structured JSON
+context block into the phase template; it does not load prompts from the target
+repository or ambient Codex configuration. Update an asset and its rendering tests
+when changing worker behavior. Python remains responsible for sandbox selection,
+schemas, workflow transitions, approval gates, and Git/GitHub safeguards.
 
 ## Development
 

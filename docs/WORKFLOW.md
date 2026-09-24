@@ -158,7 +158,9 @@ Inspection is the expensive context-building step. A separate editing agent woul
 
 Keeping one worker context allows the edit and later diagnosis to reuse knowledge acquired during inspection.
 
-The worker is specialized by phase prompt, not by spawning separate agents.
+The worker is specialized by packaged phase prompt assets, not by spawning
+separate agents. Templates receive a structured context block; sandboxing,
+approval gates, and state transitions remain deterministic code controls.
 
 ## Inspection checkpoint
 

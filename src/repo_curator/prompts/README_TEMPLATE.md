@@ -2,7 +2,8 @@
 
 ## Overview
 
-Briefly explain what the project does and its scope. Use repository evidence and human-confirmed context only.
+Briefly explain what the project does and its scope. Use repository evidence and
+human-confirmed context only.
 
 ## Tech Stack
 
@@ -24,11 +25,13 @@ Provide the intended verified run/build/use command where applicable.
 
 ## Results
 
-Optional. Include only results supported by repository artifacts or human confirmation.
+Optional. Include only results supported by repository artifacts or human
+confirmation.
 
 ## Academic Context
 
-When applicable, state the course/project context and accurately describe collaboration, instructor starter code, or upstream material.
+When applicable, state the course/project context and accurately describe
+collaboration, instructor starter code, or upstream material.
 
 ## License
 

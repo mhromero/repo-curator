@@ -119,10 +119,9 @@ def test_codex_worker_edits_in_resumed_workspace_write_context(
     assert result.report.modified_files == ["README.md"]
     assert arguments[arguments.index("--sandbox") + 1] == "workspace-write"
     assert arguments[arguments.index("resume") + 1] == "existing-thread"
-    assert "approved cleanup" in arguments[-1]
-    assert "Safe changes are limited" in arguments[-1]
-    assert "Repository identity is controlled outside this worker" in arguments[-1]
-    assert "do not rename the repository directory" in arguments[-1]
+    assert "# Worker Phase: Editing" in arguments[-1]
+    assert '"approved_inspection_plan"' in arguments[-1]
+    assert '"requested_edit_revision"' in arguments[-1]
     assert "Independent work." in arguments[-1]
 
 

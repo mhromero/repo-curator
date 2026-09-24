@@ -7,6 +7,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Callable
 
+from .prompt_assets import PromptAsset, render_worker_prompt
 from .workflow import EditReport, InspectionReport
 from .worker import (
     EditRequest,
@@ -34,7 +35,10 @@ class CodexCliWorker:
         report, thread_id, usage = self._run(
             request,
             report_type=InspectionReport,
-            prompt=_inspection_prompt(request, resuming=resume_thread_id is not None),
+            prompt=render_worker_prompt(
+                PromptAsset.WORKER_INSPECT,
+                {**request.prompt_context(), "worker_continuation": resume_thread_id is not None},
+            ),
             sandbox="read-only",
             resume_thread_id=resume_thread_id,
             on_event=on_event,
@@ -53,7 +57,7 @@ class CodexCliWorker:
         report, thread_id, usage = self._run(
             request,
             report_type=EditReport,
-            prompt=_edit_prompt(request),
+            prompt=render_worker_prompt(PromptAsset.WORKER_EDIT, request.prompt_context()),
             sandbox="workspace-write",
             resume_thread_id=resume_thread_id,
             on_event=on_event,
@@ -177,58 +181,6 @@ class CodexCliWorker:
             command.extend(["resume", resume_thread_id])
         command.append(prompt)
         return command
-
-
-def _inspection_prompt(request: InspectionRequest, *, resuming: bool) -> str:
-    context = json.dumps(request.prompt_context(), indent=2, sort_keys=True)
-    instructions = [
-        "You are Repo Curator's single repository worker in the inspection phase.",
-        "Inspect the repository statically and return the required InspectionReport.",
-        "Do not modify files, install dependencies, run project code, run tests, use the network,",
-        "or infer or overwrite human-confirmed facts. Treat human-confirmed facts as authoritative.",
-        "Use repository evidence to identify concrete findings, proposed work, validation expectations,",
-        "facts that need human confirmation, and consequential changes that require approval.",
-        "This inspection grants no authority to edit or approve changes.",
-    ]
-    if resuming:
-        instructions.append(
-            "This is a continuation after human-confirmed facts were supplied. "
-            "Reassess the prior inspection and return a complete revised InspectionReport."
-        )
-    instructions.extend(["Known context follows:", context])
-    return "\n".join(instructions)
-
-
-def _edit_prompt(request: EditRequest) -> str:
-    context = json.dumps(request.prompt_context(), indent=2, sort_keys=True)
-    return "\n".join(
-        [
-            "You are Repo Curator's single repository worker in the approved editing phase.",
-            "Resume the existing repository context and perform only the approved cleanup.",
-            "You may make clearly safe R2 changes that are within the approved inspection plan,",
-            "plus only the explicitly approved R2 change requests in the supplied context.",
-            "Safe changes are limited to disposable caches, .gitignore, verified README content or",
-            "formatting, and unambiguous dependency metadata or lockfiles that do not change behavior.",
-            "Do not silently remove factual README material unless it is demonstrably obsolete,",
-            "duplicated, or incorrect.",
-            "Do not modify source behavior, tests, dependencies, licensing, meaningful artifacts,",
-            "or repository structure unless that exact action is explicitly approved in the context.",
-            "Repository identity is controlled outside this worker: do not rename the repository "
-            "directory, change Git remotes, invoke GitHub, or request authority for those actions. "
-            "The guided controller applies a locally approved directory rename and, after separate "
-            "final publication approval, any GitHub repository or remote rename. If a revision note "
-            "mentions repository naming, perform only its in-repository file changes.",
-            "Do not invent factual claims, attribution, academic context, results, or rights.",
-            "Do not use the network or install dependencies. Cheap local sanity checks are allowed",
-            "only when non-destructive and relevant to the approved work; they are not final validation.",
-            "If additional authority is needed, make no such change and return an ApprovalRequest",
-            "in the required EditReport. Return the actual changes and unresolved concerns.",
-            "Treat declined R2 requests and their human decision notes as constraints; do not retry",
-            "those actions unless the human later requests a revised edit scope.",
-            "Known context follows:",
-            context,
-        ]
-    )
 
 
 def _strict_schema(schema: dict[str, Any]) -> dict[str, Any]:
