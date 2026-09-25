@@ -12,6 +12,7 @@ from repo_curator.cli import (
     _format_git_status_line,
     _print_inspection_report,
     _print_final_review,
+    _print_approval_request,
     _prompt_updated_repository_name,
     _review_tracked_junk,
     _retire_resolved_local_naming_concerns,
@@ -28,6 +29,7 @@ from repo_curator.scanner import scan_repository
 from repo_curator.run_store import RunStore
 from repo_curator.workflow import (
     FactRequest,
+    ApprovalRequest,
     EditReport,
     HumanFact,
     InspectionReport,
@@ -68,6 +70,23 @@ class _FinalReviewNoopPublisher:
 
     def publish(self, _plan: PublicationPlan) -> PublicationResult:
         raise AssertionError("Publication must not run when final review is declined.")
+
+
+def test_approval_request_separates_labeled_sections(capsys) -> None:
+    _print_approval_request(
+        ApprovalRequest(
+            problem="A meaningful artifact may move.",
+            proposed_change="Move the package into src/.",
+            reason="The current layout obscures the package.",
+            affected_files=["package/__init__.py"],
+            behavior_impact="Existing imports may need updates.",
+        )
+    )
+
+    output = capsys.readouterr().out
+    assert "Problem: A meaningful artifact may move.\n\nProposed change:" in output
+    assert "Reason: The current layout obscures the package.\n\nAffected files:" in output
+    assert "Expected behavior change: Existing imports may need updates.\n\n" in output
 
 
 def test_blocked_tracked_artifact_can_be_retained_and_revalidated(tmp_path: Path, monkeypatch) -> None:

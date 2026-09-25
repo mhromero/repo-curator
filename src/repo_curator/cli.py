@@ -1548,13 +1548,20 @@ def _print_report_section(title: str, values: list[str]) -> None:
 
 def _print_approval_request(request) -> None:
     _print_report_heading("Approval required")
-    typer.echo(f"Problem: {request.problem}")
-    typer.echo(f"Proposed change: {request.proposed_change}")
-    typer.echo(f"Reason: {request.reason}")
-    typer.echo(
-        "Affected files: " + (", ".join(request.affected_files) if request.affected_files else "none identified")
+    _print_approval_detail("Problem", request.problem)
+    _print_approval_detail("Proposed change", request.proposed_change)
+    _print_approval_detail("Reason", request.reason)
+    _print_approval_detail(
+        "Affected files",
+        ", ".join(request.affected_files) if request.affected_files else "none identified",
     )
-    typer.echo(f"Expected behavior change: {request.behavior_impact}")
+    _print_approval_detail("Expected behavior change", request.behavior_impact)
+
+
+def _print_approval_detail(title: str, value: str) -> None:
+    typer.secho(f"{title}:", fg=typer.colors.CYAN, bold=True, nl=False)
+    typer.echo(f" {value}")
+    typer.echo()
 
 
 def _print_repository_change_summary(repository_path: Path) -> None:
