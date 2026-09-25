@@ -1,15 +1,19 @@
 from __future__ import annotations
 
-from pathlib import Path
 import json
+from pathlib import Path
+import subprocess
 
 from typer.testing import CliRunner
 
 from repo_curator.cli import (
+    _delete_tracked_artifact,
+    _drive_guided_workflow,
     _format_git_status_line,
     _print_inspection_report,
     _print_final_review,
     _prompt_updated_repository_name,
+    _review_tracked_junk,
     _retire_resolved_local_naming_concerns,
     app,
 )
@@ -30,6 +34,8 @@ from repo_curator.workflow import (
     PortfolioClassification,
     PublicationResult,
     RepositoryRun,
+    ValidationCheck,
+    ValidationCheckStatus,
     ValidationReport,
     VerificationStatus,
     WorkflowState,
@@ -62,6 +68,106 @@ class _FinalReviewNoopPublisher:
 
     def publish(self, _plan: PublicationPlan) -> PublicationResult:
         raise AssertionError("Publication must not run when final review is declined.")
+
+
+def test_blocked_tracked_artifact_can_be_retained_and_revalidated(tmp_path: Path, monkeypatch) -> None:
+    repository = tmp_path / "uni-2026-class"
+    repository.mkdir()
+    profile = scan_repository(repository).repository_profile
+    run = RepositoryRun(
+        id="a" * 32,
+        repository_profile=profile,
+        state=WorkflowState.BLOCKED,
+        validation_report=ValidationReport(
+            verification_status=VerificationStatus.BLOCKED,
+            summary="Tracked artifact needs a human decision.",
+            checks=[
+                ValidationCheck(
+                    name="Tracked-junk scan",
+                    status=ValidationCheckStatus.FAILED,
+                    detail="1 tracked disposable file remains: `dist/coursework.whl`.",
+                    affected_paths=["dist/coursework.whl"],
+                )
+            ],
+        ),
+    )
+    store = RunStore(tmp_path / "state")
+    store.create(run)
+    monkeypatch.setattr("repo_curator.cli.typer.prompt", lambda *_args, **_kwargs: "k")
+
+    assert _review_tracked_junk(store, run) is True
+
+    saved_run = store.load(run.id)
+    assert saved_run.state == WorkflowState.VALIDATING
+    assert saved_run.validation_artifact_decisions[0].path == "dist/coursework.whl"
+    assert saved_run.validation_artifact_decisions[0].action.value == "retained"
+
+
+def test_fresh_blocked_validation_offers_tracked_artifact_decision_without_reprinting(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    repository = tmp_path / "uni-2026-class"
+    repository.mkdir()
+    profile = scan_repository(repository).repository_profile
+    run = RepositoryRun(
+        id="b" * 32,
+        repository_profile=profile,
+        state=WorkflowState.VALIDATING,
+    )
+    store = RunStore(tmp_path / "state")
+    store.create(run)
+    report = ValidationReport(
+        verification_status=VerificationStatus.BLOCKED,
+        summary="Tracked artifact needs a human decision.",
+        checks=[
+            ValidationCheck(
+                name="Tracked-junk scan",
+                status=ValidationCheckStatus.FAILED,
+                detail="1 tracked disposable file remains: `dist/coursework.whl`.",
+                affected_paths=["dist/coursework.whl"],
+            )
+        ],
+    )
+    offered = False
+
+    def blocked_validation(active_store, active_run):
+        record_validation_report(active_run, report)
+        active_store.save(active_run)
+        return report
+
+    def review(_store, _run):
+        nonlocal offered
+        offered = True
+        return False
+
+    monkeypatch.setattr("repo_curator.cli._execute_validation", blocked_validation)
+    monkeypatch.setattr("repo_curator.cli._review_tracked_junk", review)
+    monkeypatch.setattr("repo_curator.cli.typer.prompt", lambda *_args, **_kwargs: "")
+    monkeypatch.setattr("repo_curator.cli.typer.confirm", lambda *_args, **_kwargs: False)
+
+    _drive_guided_workflow(store, run, "fake-codex")
+
+    assert offered is True
+    assert capsys.readouterr().out.count("Validation\n") == 1
+
+
+def test_delete_tracked_artifact_uses_git_rm_for_one_reviewed_file(tmp_path: Path) -> None:
+    repository = tmp_path / "uni-2026-class"
+    repository.mkdir()
+    disposable = repository / ".DS_Store"
+    disposable.write_text("metadata", encoding="utf-8")
+    _git(repository, "init")
+    _git(repository, "config", "user.email", "test@example.com")
+    _git(repository, "config", "user.name", "Test User")
+    _git(repository, "add", ".DS_Store")
+    _git(repository, "commit", "-m", "Initial snapshot")
+
+    _delete_tracked_artifact(repository, ".DS_Store")
+
+    assert not disposable.exists()
+    assert _git_output(repository, "status", "--short") == "D  .DS_Store"
 
 
 def test_run_cli_persists_classification_and_shows_triage_signals(
@@ -1422,3 +1528,18 @@ def _triage_result(summary):
         ),
         provider_model="jev-test",
     )
+
+
+def _git(repository: Path, *args: str) -> None:
+    subprocess.run(["git", *args], cwd=repository, check=True, capture_output=True)
+
+
+def _git_output(repository: Path, *args: str) -> str:
+    completed = subprocess.run(
+        ["git", *args],
+        cwd=repository,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return completed.stdout.strip()

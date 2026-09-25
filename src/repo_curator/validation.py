@@ -55,6 +55,7 @@ def validate_repository(
     repository_naming: str,
     edit_report: EditReport | None,
     baseline: ValidationBaseline | None,
+    retained_artifact_paths: set[str] | None = None,
 ) -> ValidationReport:
     """Run bounded deterministic checks without installing dependencies or using a network."""
     profile = scan_repository(repository_path).repository_profile
@@ -66,10 +67,9 @@ def validate_repository(
             evidence.secret_risks,
             "potential secret indicator(s) remain",
         ),
-        _hygiene_check(
-            "Tracked-junk scan",
+        _tracked_junk_check(
             evidence.tracked_junk_paths,
-            "tracked disposable file(s) remain",
+            retained_artifact_paths or set(),
         ),
         _git_conflict_check(profile.identity.git.status_counts.conflicted if profile.identity.git else 0),
         _readme_check(bool(evidence.readme_signals), classification),
@@ -128,6 +128,42 @@ def _hygiene_check(name: str, findings: list[object], issue: str) -> ValidationC
             detail=f"{len(findings)} {issue}.",
         )
     return ValidationCheck(name=name, status=ValidationCheckStatus.PASSED, detail="No findings.")
+
+
+def _tracked_junk_check(
+    tracked_paths: list[str],
+    retained_paths: set[str],
+) -> ValidationCheck:
+    retained = [path for path in tracked_paths if path in retained_paths]
+    unresolved = [path for path in tracked_paths if path not in retained_paths]
+    if unresolved:
+        return ValidationCheck(
+            name="Tracked-junk scan",
+            status=ValidationCheckStatus.FAILED,
+            detail=(
+                f"{len(unresolved)} tracked disposable file(s) remain: "
+                + ", ".join(f"`{path}`" for path in unresolved)
+                + "."
+            ),
+            affected_paths=unresolved,
+        )
+    if retained:
+        return ValidationCheck(
+            name="Tracked-junk scan",
+            status=ValidationCheckStatus.PASSED,
+            detail=(
+                "No unapproved tracked disposable files remain. "
+                "Human-confirmed retained artifact(s): "
+                + ", ".join(f"`{path}`" for path in retained)
+                + "."
+            ),
+            affected_paths=retained,
+        )
+    return ValidationCheck(
+        name="Tracked-junk scan",
+        status=ValidationCheckStatus.PASSED,
+        detail="No findings.",
+    )
 
 
 def _git_conflict_check(conflicted_count: int) -> ValidationCheck:

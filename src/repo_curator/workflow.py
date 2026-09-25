@@ -56,6 +56,11 @@ class ValidationCheckStatus(StrEnum):
     NOT_APPLICABLE = "not_applicable"
 
 
+class ValidationArtifactAction(StrEnum):
+    RETAINED = "retained"
+    DELETED = "deleted"
+
+
 class FactRequest(BaseModel):
     key: str
     prompt: str
@@ -133,6 +138,23 @@ class ValidationCheck(BaseModel):
     status: ValidationCheckStatus
     detail: str
     required: bool = True
+    affected_paths: list[str] = Field(default_factory=list)
+
+
+class ValidationArtifactDecision(BaseModel):
+    """A human decision about one scanner-flagged repository artifact."""
+
+    path: str
+    action: ValidationArtifactAction
+    decided_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    @field_validator("path")
+    @classmethod
+    def _relative_nonblank_path(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized or normalized.startswith("/") or ".." in normalized.split("/"):
+            raise ValueError("must be a non-empty relative repository path")
+        return normalized
 
 
 class ValidationReport(BaseModel):
@@ -204,6 +226,7 @@ class RepositoryRun(BaseModel):
     validation_baseline: ValidationBaseline | None = None
     validation_report: ValidationReport | None = None
     validation_approval_requests: list[ApprovalRequest] = Field(default_factory=list)
+    validation_artifact_decisions: list[ValidationArtifactDecision] = Field(default_factory=list)
     final_review: FinalReview | None = None
     publication_result: PublicationResult | None = None
     routing_decision: RoutingDecision | None = None
@@ -701,6 +724,31 @@ def add_validation_note(run: RepositoryRun, note: str) -> None:
         raise WorkflowError("Validation note must not be blank.")
     run.validation_report.human_notes.append(note.strip())
     _touch(run)
+
+
+def record_validation_artifact_decision(
+    run: RepositoryRun,
+    path: str,
+    action: ValidationArtifactAction,
+) -> None:
+    """Persist the human's deliberate keep/delete choice for one flagged path."""
+    _require_state(run, WorkflowState.BLOCKED)
+    run.validation_artifact_decisions = [
+        decision for decision in run.validation_artifact_decisions if decision.path != path
+    ]
+    run.validation_artifact_decisions.append(
+        ValidationArtifactDecision(path=path, action=action)
+    )
+    _touch(run)
+
+
+def retained_validation_artifact_paths(run: RepositoryRun) -> set[str]:
+    """Return exact scanner paths the human intentionally chose to retain."""
+    return {
+        decision.path
+        for decision in run.validation_artifact_decisions
+        if decision.action == ValidationArtifactAction.RETAINED
+    }
 
 
 def retry_validation(run: RepositoryRun) -> None:

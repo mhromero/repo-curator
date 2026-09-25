@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 from repo_curator.models import PortfolioClassification
@@ -79,6 +80,49 @@ def test_validation_blocks_syntax_errors_and_naming_mismatches(tmp_path: Path) -
     assert {"Repository naming", "Python syntax"}.issubset(failed)
 
 
+def test_validation_names_tracked_disposable_paths(tmp_path: Path) -> None:
+    repository = _repository(tmp_path)
+    (repository / ".DS_Store").write_text("metadata", encoding="utf-8")
+    _git(repository, "init")
+    _git(repository, "add", ".")
+
+    report = validate_repository(
+        repository,
+        classification=PortfolioClassification.B,
+        repository_naming="uni-2026-class",
+        edit_report=None,
+        baseline=None,
+    )
+
+    tracked_junk = next(check for check in report.checks if check.name == "Tracked-junk scan")
+    assert tracked_junk.status.value == "failed"
+    assert tracked_junk.detail == "1 tracked disposable file(s) remain: `.DS_Store`."
+    assert tracked_junk.affected_paths == [".DS_Store"]
+
+
+def test_validation_allows_only_human_retained_tracked_artifact_paths(tmp_path: Path) -> None:
+    repository = _repository(tmp_path)
+    artifact = repository / "dist" / "coursework-1.0-py3-none-any.whl"
+    artifact.parent.mkdir()
+    artifact.write_text("package", encoding="utf-8")
+    _git(repository, "init")
+    _git(repository, "add", ".")
+
+    report = validate_repository(
+        repository,
+        classification=PortfolioClassification.B,
+        repository_naming="uni-2026-class",
+        edit_report=None,
+        baseline=None,
+        retained_artifact_paths={"dist/coursework-1.0-py3-none-any.whl"},
+    )
+
+    tracked_junk = next(check for check in report.checks if check.name == "Tracked-junk scan")
+    assert tracked_junk.status.value == "passed"
+    assert tracked_junk.affected_paths == ["dist/coursework-1.0-py3-none-any.whl"]
+    assert "Human-confirmed retained artifact" in tracked_junk.detail
+
+
 def test_validation_runs_existing_python_tests_without_installing_dependencies(tmp_path: Path) -> None:
     repository = _repository(tmp_path)
     (repository / "tests").mkdir()
@@ -106,3 +150,7 @@ def _repository(tmp_path: Path) -> Path:
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
     (repository / ".gitignore").write_text("__pycache__/\n", encoding="utf-8")
     return repository
+
+
+def _git(repository: Path, *args: str) -> None:
+    subprocess.run(["git", *args], cwd=repository, check=True, capture_output=True)

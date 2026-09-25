@@ -37,6 +37,7 @@ from .workflow import (
     EditReport,
     InspectionReport,
     PortfolioClassification,
+    ValidationArtifactAction,
     WorkflowError,
     WorkflowState,
     approve_edit,
@@ -55,6 +56,7 @@ from .workflow import (
     record_fact,
     record_inspection_report,
     record_repository_rename_decision,
+    record_validation_artifact_decision,
     record_validation_report,
     finish_publication,
     reject_final_review,
@@ -65,6 +67,7 @@ from .workflow import (
     request_repository_rename_approval,
     request_github_visibility,
     retry_validation,
+    retained_validation_artifact_paths,
     route_run,
     set_portfolio_classification,
     start_run,
@@ -924,6 +927,7 @@ def _execute_validation(store: RunStore, run):
         repository_naming=naming,
         edit_report=run.edit_report,
         baseline=run.validation_baseline,
+        retained_artifact_paths=retained_validation_artifact_paths(run),
     )
     record_validation_report(run, report)
     store.save(run)
@@ -1053,6 +1057,9 @@ def _drive_guided_workflow(
             _print_validation_report(report)
             if run.state == WorkflowState.READY_FOR_FINAL_REVIEW:
                 continue
+            if run.state == WorkflowState.BLOCKED:
+                if _resolve_blocked_validation(store, run):
+                    continue
             typer.echo(f"State: {run.state.value}")
             return
 
@@ -1074,24 +1081,7 @@ def _drive_guided_workflow(
         if run.state == WorkflowState.BLOCKED:
             if run.validation_report is not None:
                 _print_validation_report(run.validation_report)
-                if _repository_name_needs_rename(run):
-                    typer.echo("The repository naming issue can be resolved by the local-rename decision below.")
-                    if not _review_repository_rename(store, run):
-                        typer.echo(f"State: {run.state.value}")
-                        return
-                    continue
-                note = typer.prompt(
-                    "Add a note for later review or diagnosis (optional)",
-                    default="",
-                    show_default=False,
-                ).strip()
-                if note:
-                    add_validation_note(run, note)
-                    store.save(run)
-                    typer.echo("Validation note saved.")
-                if typer.confirm("Retry validation after taking human action?", default=False):
-                    retry_validation(run)
-                    store.save(run)
+                if _resolve_blocked_validation(store, run):
                     continue
             typer.echo(f"State: {run.state.value}")
             return
@@ -1099,6 +1089,107 @@ def _drive_guided_workflow(
         typer.echo(f"State: {run.state.value}")
         typer.echo("This state is outside the currently implemented guided workflow.")
         return
+
+
+def _resolve_blocked_validation(store: RunStore, run) -> bool:
+    """Offer only the direct, structured remediation available for this report."""
+    if _repository_name_needs_rename(run):
+        typer.echo("The repository naming issue can be resolved by the local-rename decision below.")
+        return _review_repository_rename(store, run)
+    if _review_tracked_junk(store, run):
+        return True
+    note = typer.prompt(
+        "Add a note for later review or diagnosis (optional)",
+        default="",
+        show_default=False,
+    ).strip()
+    if note:
+        add_validation_note(run, note)
+        store.save(run)
+        typer.echo("Validation note saved.")
+    if typer.confirm("Retry validation after taking human action?", default=False):
+        retry_validation(run)
+        store.save(run)
+        return True
+    return False
+
+
+def _review_tracked_junk(store: RunStore, run) -> bool:
+    """Resolve exact scanner-flagged disposable paths without parsing report text."""
+    if run.validation_report is None:
+        return False
+    decided_paths = {decision.path for decision in run.validation_artifact_decisions}
+    flagged_paths = [
+        path
+        for check in run.validation_report.checks
+        if check.name == "Tracked-junk scan" and check.status.value == "failed"
+        for path in check.affected_paths
+    ]
+    paths = [
+        path
+        for path in flagged_paths
+        if path not in decided_paths
+    ]
+    if not paths:
+        if flagged_paths:
+            typer.echo("Revalidating...")
+            retry_validation(run)
+            store.save(run)
+            return True
+        return False
+
+    _print_report_heading("Tracked file decisions")
+    typer.echo("Choose how to handle each scanner-flagged file.")
+    for path in paths:
+        action = _prompt_tracked_junk_action(path)
+        if action is None:
+            return False
+        if action == ValidationArtifactAction.DELETED:
+            _delete_tracked_artifact(Path(run.repository_profile.identity.path), path)
+            typer.echo(f"Deleted from the worktree and staged for removal: {path}")
+        else:
+            typer.echo(f"Retained as a human-confirmed repository artifact: {path}")
+        record_validation_artifact_decision(run, path, action)
+        store.save(run)
+
+    typer.echo("Revalidating...")
+    retry_validation(run)
+    store.save(run)
+    return True
+
+
+def _prompt_tracked_junk_action(path: str) -> ValidationArtifactAction | None:
+    while True:
+        choice = typer.prompt(
+            f"How should Repo Curator handle `{path}`? [d]elete / [k]eep / [s]top",
+            default="s",
+            show_default=False,
+        ).strip().lower()
+        if choice in {"d", "delete"}:
+            return ValidationArtifactAction.DELETED
+        if choice in {"k", "keep"}:
+            return ValidationArtifactAction.RETAINED
+        if choice in {"", "s", "stop"}:
+            return None
+        typer.echo("Enter d to delete, k to keep, or s to stop.")
+
+
+def _delete_tracked_artifact(repository_path: Path, relative_path: str) -> None:
+    """Use Git to remove one reviewed tracked file without force or recursion."""
+    root = repository_path.expanduser().resolve()
+    target = (root / relative_path).resolve()
+    if root not in target.parents or not target.is_file():
+        raise WorkflowError(f'Cannot safely delete tracked artifact "{relative_path}".')
+    completed = subprocess.run(
+        ["git", "rm", "--", relative_path],
+        cwd=root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout).strip()
+        raise WorkflowError(f'Could not delete tracked artifact "{relative_path}": {detail}')
 
 
 def _review_and_publish(store: RunStore, run, publisher: GitHubCliPublisher, plan) -> bool:

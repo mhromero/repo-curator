@@ -33,6 +33,9 @@ use should not require knowledge of the internal state machine.
   to rename only the local directory. Explain that no remote is renamed; on a
   declined rename, offer an optional persisted note and leave the workflow safely
   stopped at `BLOCKED`.
+- When validation flags tracked disposable files, list their exact paths and ask
+  the human to delete, keep as an intentional artifact, or stop. A keep decision
+  is persisted for that exact path only, then validation is rerun automatically.
 - At final review, show validation status and concerns, source-code-change status,
   the exact GitHub target, description, visibility, branch, Git transport, and reviewed Git
   changes before asking for publication approval.

@@ -23,6 +23,7 @@ from repo_curator.workflow import (
     InspectionReport,
     PortfolioClassification,
     PublicationResult,
+    ValidationArtifactAction,
     WorkflowError,
     WorkflowState,
     ValidationReport,
@@ -39,11 +40,13 @@ from repo_curator.workflow import (
     record_fact,
     record_inspection_report,
     record_repository_rename_decision,
+    record_validation_artifact_decision,
     record_validation_report,
     request_final_review_changes,
     request_repository_naming_confirmation,
     request_repository_rename_approval,
     retry_validation,
+    retained_validation_artifact_paths,
     route_run,
     set_portfolio_classification,
     start_run,
@@ -352,6 +355,21 @@ def test_blocked_naming_mismatch_can_record_a_direct_rename_approval(tmp_path: P
 
     retry_validation(run)
     assert run.state == WorkflowState.VALIDATING
+
+
+def test_blocked_validation_artifact_decision_is_path_specific(tmp_path: Path) -> None:
+    profile, triage_result = _scan_and_triage(tmp_path)
+    run = _triaged_run(profile, triage_result)
+    run.state = WorkflowState.BLOCKED
+
+    record_validation_artifact_decision(
+        run,
+        "dist/coursework-1.0-py3-none-any.whl",
+        ValidationArtifactAction.RETAINED,
+    )
+
+    assert retained_validation_artifact_paths(run) == {"dist/coursework-1.0-py3-none-any.whl"}
+    assert run.validation_artifact_decisions[0].action == ValidationArtifactAction.RETAINED
 
 
 def test_run_store_round_trips_human_decisions(tmp_path: Path) -> None:

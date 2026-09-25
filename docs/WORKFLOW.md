@@ -76,7 +76,11 @@ The worker may reason and edit, but the human controls factual claims, risky cha
    invents the values. If that name differs from the local directory, the guided
    flow requires a separate persisted approval before renaming that local directory;
    it never renames a remote repository during validation. `VERIFIED` and `PARTIALLY_VERIFIED` enter
-   `READY_FOR_FINAL_REVIEW`; `BLOCKED` stops for human action.
+   `READY_FOR_FINAL_REVIEW`; `BLOCKED` stops for human action. For a tracked
+   generated/disposable path, the guided CLI shows every exact path and lets the
+   human delete it or retain it as an intentional artifact. A retained path is a
+   persisted, path-specific human decision; it does not exempt its directory or
+   future generated files.
 
 10. DIAGNOSE, if needed
    The same Codex context reasons about validation failures.
