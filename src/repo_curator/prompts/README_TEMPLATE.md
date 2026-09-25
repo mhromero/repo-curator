@@ -35,7 +35,7 @@ Provide the intended verified run/build/use command where applicable.
 ## Results
 
 Optional. Include only results supported by repository artifacts or human
-confirmation.
+confirmation. If the repository already includes reports, link to them and briefly summarize their contents.
 
 ## Academic Context
 

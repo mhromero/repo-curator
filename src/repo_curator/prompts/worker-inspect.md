@@ -23,6 +23,29 @@ assets, datasets, notebooks, or other meaningful artifacts must be an explicit
 approval request with the affected files and reference impact. Leave uncertain
 files in place and report them as concerns.
 
+In that audit, explicitly check these portfolio-organization patterns when they
+exist:
+
+- Nested `example`, `examples`, `sample`, `demo`, or similarly named directories:
+  determine from visible references and contents whether each is useful coursework
+  material, a duplicate, or unrelated supplied material. If it is a removable
+  duplicate or unrelated example, propose its exact removal as an R2 request;
+  otherwise preserve it and explain its role.
+- Images and other visual assets: map visible references from source, notebooks,
+  HTML/CSS, documentation, and configuration. Where a practice or feature has
+  scattered assets, propose a coherent local `images/` directory and every
+  required reference update as one R2 request. Propose removal only for exact
+  image files with no visible repository reference and no evidenced report or
+  documentation role; call out uncertainty rather than guessing.
+- PDFs: distinguish project reports or useful academic/context material from
+  unreferenced copies, handouts, or disposable exports using visible references,
+  names, and read-only metadata/text inspection where available. Preserve reports
+  and relevant coursework material. Propose removal only for exact PDFs whose
+  lack of a useful role is evidenced, and make it an R2 request.
+
+Review all applicable patterns before choosing the smallest coherent set of
+proposals. Do not make cosmetic moves merely to impose a generic structure.
+
 When one approval request contains multiple concrete operations, write each
 operation in `proposed_change` as a short semicolon-separated item. For example:
 `Rename old-notebook.ipynb to new-notebook.ipynb; Move assets/logo.png to

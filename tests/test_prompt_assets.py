@@ -40,6 +40,10 @@ def test_inspection_prompt_requires_a_static_organization_and_reference_audit() 
     assert "not a fixed threshold" in prompt
     assert "higher audit\npriority only" in prompt
     assert "do not ask a redundant question" in prompt
+    assert "Nested `example`, `examples`, `sample`, `demo`" in prompt
+    assert "scattered assets" in prompt
+    assert "PDFs: distinguish project reports" in prompt
+    assert "all applicable patterns" in prompt
 
 
 def test_inspection_prompt_receives_raw_jev_scores_as_structured_context() -> None:
