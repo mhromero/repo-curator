@@ -3,6 +3,13 @@
 Write explanatory prose and headings in English. Preserve repository paths,
 commands, proper names, and verified academic facts exactly as evidenced.
 
+When reader-facing prose mentions an existing document, report, notebook, or
+directory, link its first mention with a clean relative Markdown link—for example,
+[`hw/`](hw/), [`lab/image-processing/`](lab/image-processing/), or
+[`Homework 3 report`](hw/hw3/report.pdf). Do not expose absolute local paths.
+Keep paths in copyable commands as plain code rather than turning command syntax
+into links.
+
 Participants: (if more than 1)
 
 ## Overview

@@ -76,6 +76,9 @@ def test_edit_prompt_renders_the_adaptive_readme_quality_guide() -> None:
     assert "include the applicable English Academic Context or\nProvenance section" in rendered
     assert "[Report](reports/final-report.pdf)" in rendered
     assert "Never expose an absolute local filesystem" in rendered
+    assert "[`hw/`](hw/)" in rendered
+    assert "[`Homework 3 report`](hw/hw3/report.pdf)" in rendered
+    assert "copyable commands as plain code" in rendered
     assert "MATLAB Image Processing Toolbox" in rendered
     assert "some functions from the image toolbox" in rendered
     assert "reader-oriented map rather than a filesystem inventory" in rendered
