@@ -20,6 +20,7 @@ from repo_curator.cli import (
     _review_missing_gitignore,
     _review_tracked_junk,
     _retire_resolved_local_naming_concerns,
+    _separate_operations,
     app,
 )
 from repo_curator.models import (
@@ -101,6 +102,18 @@ def test_approval_request_separates_labeled_sections(capsys) -> None:
     assert "  - Move the package into src/.\n  - Rename the entry point." in output
     assert "Affected files:\n  - package/__init__.py" in output
     assert "Expected behavior change:\n  Existing imports may need updates.\n\n" in output
+
+
+def test_approval_request_formats_an_unambiguous_multi_rename_sentence() -> None:
+    assert _separate_operations(
+        "Rename AS1_Image_Captioning_25_26.ipynb to image-captioning.ipynb, "
+        "HW2_Simplified_Object_Detection_24_25-2.ipynb to object-detection.ipynb, and "
+        "colorization-maria-finalv.ipynb to image-colorization.ipynb."
+    ) == [
+        "Rename AS1_Image_Captioning_25_26.ipynb → image-captioning.ipynb",
+        "Rename HW2_Simplified_Object_Detection_24_25-2.ipynb → object-detection.ipynb",
+        "Rename colorization-maria-finalv.ipynb → image-colorization.ipynb",
+    ]
 
 
 def test_required_fact_prompt_separates_question_from_response_field(monkeypatch, capsys) -> None:
@@ -837,7 +850,7 @@ def test_guided_run_completes_approved_edit_and_resumes_by_repository_path(
             "--codex-bin",
             str(executable),
         ],
-        input="B\ny\ny\ny\ny\ny\nNatural Language Processing\n2026\ny\nn\n\n",
+        input="B\ny\ny\ny\ny\ny\nNatural Language Processing\n2026\ny\nn\n\ny\n",
     )
 
     run = RunStore(state_root).latest_active_for_repository(repository)
@@ -850,6 +863,7 @@ def test_guided_run_completes_approved_edit_and_resumes_by_repository_path(
     assert "Edit report" in result.stdout
     assert "Approve these edits?" in result.stdout
     assert "Verification outcome: VERIFIED" in result.stdout
+    assert "End this session with publication still pending?" in result.stdout
     assert run is not None
     assert run.state.value == "READY_FOR_FINAL_REVIEW"
     assert run.worker_runtime is not None
@@ -989,7 +1003,10 @@ def test_final_review_reuses_completed_run_about_details_before_prompting(
     store.create(completed_run)
     store.create(active_run)
     monkeypatch.setattr("repo_curator.cli.GitHubCliPublisher", _FinalReviewNoopPublisher)
-    monkeypatch.setattr("repo_curator.cli.typer.confirm", lambda *_args, **_kwargs: False)
+    confirmations = iter([False, True])
+    monkeypatch.setattr(
+        "repo_curator.cli.typer.confirm", lambda *_args, **_kwargs: next(confirmations)
+    )
     monkeypatch.setattr("repo_curator.cli.typer.prompt", lambda *_args, **_kwargs: "")
 
     _drive_guided_workflow(store, active_run, "fake-codex")
@@ -1027,7 +1044,7 @@ def test_guided_run_renames_local_repository_only_after_explicit_approval(
             "--codex-bin",
             str(executable),
         ],
-        input="B\ny\ny\ny\nuni-class\ny\ny\nNatural Language Processing\n2026\ny\nn\n\n",
+        input="B\ny\ny\ny\nuni-class\ny\ny\nNatural Language Processing\n2026\ny\nn\n\ny\n",
     )
 
     renamed_repository = tmp_path / "uni-class"
@@ -1080,7 +1097,7 @@ def test_guided_blocked_naming_mismatch_offers_direct_rename_without_retry_promp
     result = runner.invoke(
         app,
         ["run", str(repository), "--state-root", str(state_root)],
-        input="y\nNatural Language Processing\n2026\ny\nn\n\n",
+        input="y\nNatural Language Processing\n2026\ny\nn\n\ny\n",
     )
 
     renamed_repository = tmp_path / "vgtu-intelligent-systems"
@@ -1419,7 +1436,7 @@ def test_guided_run_renders_r2_approval_before_editing(tmp_path: Path, monkeypat
             "--codex-bin",
             str(executable),
         ],
-        input="B\ny\ny\ny\ny\ny\ny\nNatural Language Processing\n2026\ny\nn\n\n",
+        input="B\ny\ny\ny\ny\ny\ny\nNatural Language Processing\n2026\ny\nn\n\ny\n",
     )
 
     assert result.exit_code == 0
@@ -1473,7 +1490,7 @@ def test_guided_r2_rejection_enters_editing_without_representing_the_plan(tmp_pa
             "--codex-bin",
             str(executable),
         ],
-        input="B\ny\ny\nn\nKeep the existing import paths.\ny\ny\ny\nNatural Language Processing\n2026\ny\nn\n\n",
+        input="B\ny\ny\nn\nKeep the existing import paths.\ny\ny\ny\nNatural Language Processing\n2026\ny\nn\n\ny\n",
     )
 
     assert result.exit_code == 0
@@ -1519,7 +1536,7 @@ def test_guided_edit_rejection_requests_a_revision_in_the_same_worker_context(
             "--codex-bin",
             str(executable),
         ],
-        input="B\ny\ny\nn\nKeep the existing README heading.\ny\ny\ny\nNatural Language Processing\n2026\ny\nn\n\n",
+        input="B\ny\ny\nn\nKeep the existing README heading.\ny\ny\ny\nNatural Language Processing\n2026\ny\nn\n\ny\n",
     )
 
     run = RunStore(state_root).latest_active_for_repository(repository)

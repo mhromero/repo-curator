@@ -23,6 +23,11 @@ assets, datasets, notebooks, or other meaningful artifacts must be an explicit
 approval request with the affected files and reference impact. Leave uncertain
 files in place and report them as concerns.
 
+When one approval request contains multiple concrete operations, write each
+operation in `proposed_change` as a short semicolon-separated item. For example:
+`Rename old-notebook.ipynb to new-notebook.ipynb; Move assets/logo.png to
+assets/images/logo.png.` Do not compress multiple renames into one long sentence.
+
 This is portfolio preparation, not modernization. Do not recommend refactoring
 merely because code is old, verbose, duplicated, non-idiomatic, or architecturally
 simple. Do not infer personal, academic, authorship, licensing, or intentionality

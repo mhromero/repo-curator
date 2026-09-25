@@ -14,6 +14,10 @@ human-confirmed context only. Don't specify the number of labs/folders/files.
 
 List the principal languages, libraries, frameworks, or tools actually used.
 
+## Features and repository structure
+
+If the complexity of the repository or the work requires it, specifythe repository organisation and the main features (concepts, models used, contents...) For small or medium-sized repositories that are self explanatory, ignore this section.
+
 ## Getting Started
 
 ### Requirements

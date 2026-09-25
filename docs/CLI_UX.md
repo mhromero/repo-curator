@@ -65,8 +65,8 @@ use should not require knowledge of the internal state machine.
   note, offer confirmation of one unambiguous R1-shaped replacement name mentioned
   in that note, and resume the same Codex editing context. It does not ask about
   repository naming when no replacement is mentioned; only ambiguous candidates
-  use explicit manual entry. A blank decline stops publication without resuming
-  work.
+  use explicit manual entry. A blank decline returns to final review; ending a
+  pending publication session requires its own explicit confirmation.
 - Resume the existing worker context when continuing worker work.
 - Never require the user to manually copy worker output, IDs, or structured
   state between commands.
@@ -80,8 +80,9 @@ use should not require knowledge of the internal state machine.
   the output.
 - In an approval card, put each field label on its own line. Wrap its value with
   indentation; render semicolon-delimited proposed operations and affected paths
-  as separate bullets. This is presentation only: structured approval data remains
-  the source of truth.
+  as separate bullets. Also recognize an unambiguous comma-delimited multi-rename
+  sentence and render each source → destination pair as a bullet. This is
+  presentation only: structured approval data remains the source of truth.
 - When the guided flow pauses for a required human fact, use a prominent coloured
   heading, render the question as an indented paragraph, and put the response
   field on a separate line.

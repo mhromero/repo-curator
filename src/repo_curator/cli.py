@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import textwrap
@@ -1328,7 +1329,7 @@ def _review_and_publish(store: RunStore, run, publisher: GitHubCliPublisher, pla
     if run.final_review is None or not run.final_review.approved:
         if not typer.confirm("Approve publication to this GitHub repository?", default=False):
             notes = typer.prompt(
-                "Describe requested repository changes (leave blank to stop publication without changes)",
+                "Describe requested repository changes (leave blank to return to final review)",
                 default="",
                 show_default=False,
             ).strip() or None
@@ -1340,11 +1341,14 @@ def _review_and_publish(store: RunStore, run, publisher: GitHubCliPublisher, pla
                 store.save(run)
                 typer.echo("Final review changes requested; resuming the existing Codex worker context.")
                 return True
-            reject_final_review(run, notes)
-            store.save(run)
-            typer.echo("Final publication approval was declined. No Git or GitHub changes were made.")
-            typer.echo(f"State: {run.state.value}")
-            return False
+            if typer.confirm("End this session with publication still pending?", default=False):
+                reject_final_review(run, notes)
+                store.save(run)
+                typer.echo("Publication remains pending. No Git or GitHub changes were made.")
+                typer.echo(f"State: {run.state.value}")
+                return False
+            typer.echo("Publication remains pending; returning to final review.")
+            return True
         approve_final_review(run)
         store.save(run)
         typer.echo("Final approval recorded. Publishing the reviewed repository...")
@@ -1732,8 +1736,28 @@ def _print_approval_paths(paths: list[str]) -> None:
 
 
 def _separate_operations(value: str) -> list[str]:
-    """Use an explicit semicolon as a safe presentation-only operation boundary."""
-    return [item.strip() for item in value.split(";") if item.strip()]
+    """Render explicit operations, plus the common multi-rename sentence shape."""
+    explicit_operations = [item.strip() for item in value.split(";") if item.strip()]
+    if len(explicit_operations) > 1:
+        return explicit_operations
+    rename_operations = _split_rename_operations(value)
+    return rename_operations or explicit_operations
+
+
+def _split_rename_operations(value: str) -> list[str]:
+    """Split a single unambiguous multi-rename sentence for terminal display."""
+    normalized = " ".join(value.split()).rstrip(".")
+    match = re.fullmatch(r"Rename\s+(.+)", normalized, flags=re.IGNORECASE)
+    if match is None:
+        return []
+    clauses = re.split(r",\s*(?:and\s+)?", match.group(1))
+    operations: list[str] = []
+    for clause in clauses:
+        source, separator, destination = clause.partition(" to ")
+        if not separator or not source.strip() or not destination.strip():
+            return []
+        operations.append(f"Rename {source.strip()} → {destination.strip()}")
+    return operations if len(operations) > 1 else []
 
 
 def _print_wrapped(value: str, *, bullet: bool = False) -> None:

@@ -119,7 +119,8 @@ The worker may reason and edit, but the human controls factual claims, risky cha
 
     A final-review decline with requested changes returns to `EDITING` and resumes
     the existing Codex context. A decline without requested changes remains at
-    `READY_FOR_FINAL_REVIEW` and makes no Git or GitHub changes.
+    `READY_FOR_FINAL_REVIEW` and makes no Git or GitHub changes; the guided CLI
+    returns to the final review unless the human explicitly ends that session.
 
 12. FINISHED
     Final approval plus a successful recorded publication closes the run.
