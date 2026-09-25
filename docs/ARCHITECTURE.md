@@ -49,7 +49,7 @@ R6 defines and persists concrete escalation requests and decisions, including ei
 
 ### 5. Persistent Codex worker
 
-R7/R8 use a small `CodexCliWorker` adapter. It receives compact `InspectionRequest` and `EditRequest` models, rather than a `RepositoryRun`, then invokes `codex exec` with the R6 provider model, `model_reasoning_effort`, JSONL events, and phase-specific output schemas. Inspection uses read-only sandboxing. Approved editing resumes the stored thread with `workspace-write` sandboxing and receives only the approved plan, human facts, and approved R2 requests. Repo Curator stores only the Codex thread ID and concise attempt telemetry; Codex owns conversation history. Worker failures remain in their current phase for retry.
+R7/R8 use a small `CodexCliWorker` adapter. It receives compact `InspectionRequest` and `EditRequest` models, rather than a `RepositoryRun`, then invokes `codex exec` with the R6 provider model, `model_reasoning_effort`, JSONL events, and phase-specific output schemas. Inspection uses read-only sandboxing. Approved editing resumes the stored thread with `workspace-write` sandboxing and receives the approved plan, human facts, approved R2 requests, and rejected R2 requests as constraints. Repo Curator stores only the Codex thread ID and concise attempt telemetry; Codex owns conversation history. Worker failures remain in their current phase for retry.
 
 The locally authenticated Codex CLI is the current backend because it works with the available Codex access. The OpenAI Agents SDK is a viable future adapter for application-managed sessions and sandboxes, but it requires separately billed API Platform credentials that are not configured for this project. It is not an R7 dependency.
 

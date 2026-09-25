@@ -11,6 +11,18 @@ expectations, facts requiring human confirmation, and consequential changes that
 require approval. Treat human-confirmed facts as authoritative; do not infer or
 overwrite them.
 
+Perform a focused static organization and reference audit. Assess whether the
+top-level layout, versioned directories, source files, and assets make the
+repository understandable for its actual scope. Trace visible local references
+where practical (for example imports, documented commands, HTML/CSS asset links,
+and configuration paths) before calling a file unused, stale, misplaced, or
+broken. Distinguish confirmed evidence from uncertainty. Propose only the
+smallest organization improvement that helps a future reader; do not add
+structure for appearance alone. Any move, rename, or removal of source files,
+assets, datasets, notebooks, or other meaningful artifacts must be an explicit
+approval request with the affected files and reference impact. Leave uncertain
+files in place and report them as concerns.
+
 This is portfolio preparation, not modernization. Do not recommend refactoring
 merely because code is old, verbose, duplicated, non-idiomatic, or architecturally
 simple. Do not infer personal, academic, authorship, licensing, or intentionality

@@ -19,6 +19,10 @@ use should not require knowledge of the internal state machine.
 - Present approval requests in readable language before asking for a decision.
 - When an approval is declined, offer an optional explanation and provide that
   persisted constraint to the resumed worker context.
+- After an approved inspection plan, deciding an individual R2 request must not
+  re-present the entire plan. Approved requests grant edit authority; rejected
+  requests and their notes become constraints for the same editing context. Only
+  declining the inspection plan itself asks for a revised plan.
 - Show inspection findings and proposed work before inspection approval.
 - Show actual repository changes before edit approval.
 - At edit review, let the human approve the completed edits or describe a
@@ -54,6 +58,9 @@ use should not require knowledge of the internal state machine.
 - Internal structured data should be rendered for humans rather than dumped
   directly to the terminal.
 - The CLI should make the current state and next required action clear.
+- Reports should use consistent headings and an empty line between major sections.
+  Use light terminal color when supported, without making color necessary to read
+  the output.
 
 ## Example flow
 

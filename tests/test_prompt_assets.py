@@ -28,3 +28,11 @@ def test_worker_prompt_renders_one_structured_context_block(asset: PromptAsset) 
 def test_non_worker_asset_cannot_be_rendered_as_a_worker_prompt() -> None:
     with pytest.raises(ValueError, match="not a worker-phase prompt"):
         render_worker_prompt(PromptAsset.README_TEMPLATE, {})
+
+
+def test_inspection_prompt_requires_a_static_organization_and_reference_audit() -> None:
+    prompt = load_prompt_asset(PromptAsset.WORKER_INSPECT)
+
+    assert "static organization and reference audit" in prompt
+    assert "Trace visible local references" in prompt
+    assert "Leave uncertain\nfiles in place" in prompt

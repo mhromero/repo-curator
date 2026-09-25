@@ -150,8 +150,8 @@ def build_edit_request(run: RepositoryRun) -> EditRequest:
         raise ValueError("An approved inspection report is required before editing.")
     if run.inspection_review.outcome != "approved":
         raise ValueError("The inspection plan must be approved before editing.")
-    if run.pending_inspection_approval_requests or run.rejected_inspection_approval_requests:
-        raise ValueError("All inspection approval requests must be approved before editing.")
+    if run.pending_inspection_approval_requests:
+        raise ValueError("All inspection approval requests must be decided before editing.")
 
     change_requests = run.inspection_report.approval_requests + (
         run.edit_report.approval_requests if run.edit_report is not None else []

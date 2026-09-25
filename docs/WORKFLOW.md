@@ -41,6 +41,10 @@ The worker may reason and edit, but the human controls factual claims, risky cha
    Codex reads the repository and proposes a concrete plan.
    No substantive edits.
 
+   Inspection includes a static, evidence-based organization and visible-reference
+   audit. A move, rename, or removal of meaningful files remains an R2 decision;
+   uncertain files are surfaced as concerns rather than removed.
+
    Implemented by `repo-curator run inspection execute <run-id>` after routing.
 
 6. INSPECTION REVIEW
@@ -50,8 +54,9 @@ The worker may reason and edit, but the human controls factual claims, risky cha
    The same Codex context performs the approved work.
 
    Implemented by `repo-curator run continue <run-id>` after inspection approval,
-   or by `repo-curator run edit execute <run-id>` for scripting. It receives only
-   the approved inspection plan and approved R2 requests.
+   or by `repo-curator run edit execute <run-id>` for scripting. It receives the
+   approved inspection plan, approved R2 requests, and declined R2 requests as
+   constraints with the human's explanation.
 
 8. EDIT REVIEW
    Human reviews the actual diff and requests changes or approves.
@@ -130,9 +135,9 @@ stays in `INSPECTING` for retry. The state functions and CLI enforce these bound
 - inspection reports with required facts lead to `WAITING_FOR_INPUT` and resume `INSPECTING` once answered;
 - inspection reports without required facts lead to `WAITING_INSPECTION_REVIEW`;
 - accepted inspection plans with pending R2 requests lead to `WAITING_APPROVAL`;
-- only all-approved R2 requests may enter `EDITING`;
+- once every inspection R2 request is decided, the approved plan enters `EDITING`;
 - R8 resumes the same Codex thread in `workspace-write` mode with the approved plan,
-  confirmed facts, and approved R2 requests only;
+  confirmed facts, approved R2 requests, and rejected R2 constraints;
 - edit reports lead to `WAITING_EDIT_REVIEW` unless they introduce a new R2 approval request;
 - newly approved edit-time R2 requests resume `EDITING`; rejected ones lead to edit review;
 - accepted edit reviews lead to `VALIDATING`, never directly to completion;

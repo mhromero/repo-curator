@@ -7,6 +7,7 @@ from typer.testing import CliRunner
 
 from repo_curator.cli import (
     _format_git_status_line,
+    _print_inspection_report,
     _print_final_review,
     _prompt_updated_repository_name,
     _retire_resolved_local_naming_concerns,
@@ -164,6 +165,22 @@ def test_git_status_is_rendered_in_plain_language() -> None:
     assert _format_git_status_line("?? README.md") == "Untracked: README.md"
     assert _format_git_status_line(" M README.md") == "Modified: README.md"
     assert _format_git_status_line("A  .gitignore") == "Added to index: .gitignore"
+
+
+def test_inspection_report_separates_major_sections(capsys) -> None:
+    _print_inspection_report(
+        InspectionReport(
+            summary="Inspection complete.",
+            important_findings=["A finding."],
+            proposed_work=["A proposed change."],
+            expected_validation=["A check."],
+        )
+    )
+
+    output = capsys.readouterr().out
+    assert "Inspection complete.\n\nImportant findings:" in output
+    assert "- A finding.\n\nProposed work:" in output
+    assert "- A proposed change.\n\nExpected validation:" in output
 
 
 def test_final_review_shows_plain_folder_git_initialization(tmp_path: Path, capsys) -> None:
@@ -967,7 +984,7 @@ def test_guided_run_renders_r2_approval_before_editing(tmp_path: Path, monkeypat
     assert "State: READY_FOR_FINAL_REVIEW" in result.stdout
 
 
-def test_guided_rejection_collects_an_explanation_for_the_worker(tmp_path: Path, monkeypatch) -> None:
+def test_guided_r2_rejection_enters_editing_without_representing_the_plan(tmp_path: Path, monkeypatch) -> None:
     repository = tmp_path / "uni-2026-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
@@ -992,7 +1009,6 @@ def test_guided_rejection_collects_an_explanation_for_the_worker(tmp_path: Path,
             }
         ),
     )
-    monkeypatch.setenv("FAKE_CODEX_RESUMED_REPORT", json.dumps({"summary": "Revised plan."}))
     monkeypatch.setenv("FAKE_CODEX_EDIT_REPORT", json.dumps({"modified_files": ["README.md"]}))
     monkeypatch.setattr("repo_curator.cli.GitHubCliPublisher", _FinalReviewNoopPublisher)
     executable = _fake_codex(tmp_path)
@@ -1009,13 +1025,13 @@ def test_guided_rejection_collects_an_explanation_for_the_worker(tmp_path: Path,
             "--codex-bin",
             str(executable),
         ],
-        input="B\ny\ny\nn\nKeep the existing import paths.\ny\ny\nuni-2026-class\ny\nn\n\n",
+        input="B\ny\ny\nn\nKeep the existing import paths.\ny\nuni-2026-class\ny\nn\n\n",
     )
 
     assert result.exit_code == 0
     assert "Why are you declining this change? (optional)" in result.stdout
-    assert "Describe the required plan changes" not in result.stdout
-    assert "Resuming read-only Codex thread thread-123" in result.stdout
+    assert result.stdout.count("Approve this inspection plan?") == 1
+    assert "Resuming Codex thread thread-123 with workspace-write access." in result.stdout
     assert "State: READY_FOR_FINAL_REVIEW" in result.stdout
 
 

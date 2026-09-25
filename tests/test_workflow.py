@@ -14,7 +14,7 @@ from repo_curator.models import (
 from repo_curator.run_store import RunStore
 from repo_curator.routing import RoutingConfig
 from repo_curator.scanner import scan_repository
-from repo_curator.worker import build_edit_request, build_inspection_request
+from repo_curator.worker import build_edit_request
 from repo_curator.workflow import (
     ApprovalRequest,
     ApprovalStatus,
@@ -40,7 +40,6 @@ from repo_curator.workflow import (
     record_inspection_report,
     record_repository_rename_decision,
     record_validation_report,
-    request_inspection_changes,
     request_final_review_changes,
     request_repository_naming_confirmation,
     request_repository_rename_approval,
@@ -121,9 +120,10 @@ def test_inspection_facts_resume_inspection_without_reasking_confirmed_facts(
     assert run.human_facts["runtime_expectation"].value == "Run `python -m app`."
 
 
-def test_r2_approval_boundary_requires_every_request_to_be_approved(tmp_path: Path) -> None:
+def test_r2_rejection_keeps_approved_inspection_plan_and_enters_editing(tmp_path: Path) -> None:
     profile, triage_result = _scan_and_triage(tmp_path)
     run = _triaged_run(profile, triage_result)
+    route_run(run, RoutingConfig.from_environment())
     begin_inspection(run)
     first_request = _approval_request("Rename an unclear source module.")
     second_request = _approval_request("Remove an obsolete generated artifact.")
@@ -142,11 +142,13 @@ def test_r2_approval_boundary_requires_every_request_to_be_approved(tmp_path: Pa
     assert run.state == WorkflowState.WAITING_APPROVAL
     decide_approval(run, second_request.id, False, "Keep it for now.")
 
-    assert run.state == WorkflowState.WAITING_INSPECTION_REVIEW
+    assert run.state == WorkflowState.EDITING
+    assert first_request.status == ApprovalStatus.APPROVED
     assert second_request.status == ApprovalStatus.REJECTED
     assert second_request.decision_notes == "Keep it for now."
-    with pytest.raises(WorkflowError, match="require a revised inspection report"):
-        approve_inspection(run)
+    edit_request = build_edit_request(run)
+    assert [item.id for item in edit_request.approved_change_requests] == [first_request.id]
+    assert [item.id for item in edit_request.declined_change_requests] == [second_request.id]
 
 
 def test_edit_report_uses_existing_r2_approval_boundary(tmp_path: Path) -> None:
@@ -177,7 +179,7 @@ def test_edit_report_uses_existing_r2_approval_boundary(tmp_path: Path) -> None:
     assert [item.id for item in edit_request.approved_change_requests] == [request.id]
 
 
-def test_rejected_inspection_approval_notes_reach_the_resumed_worker(tmp_path: Path) -> None:
+def test_rejected_inspection_approval_notes_reach_the_editing_worker(tmp_path: Path) -> None:
     profile, triage_result = _scan_and_triage(tmp_path)
     run = _triaged_run(profile, triage_result)
     route_run(run, RoutingConfig.from_environment())
@@ -190,19 +192,14 @@ def test_rejected_inspection_approval_notes_reach_the_resumed_worker(tmp_path: P
     approve_inspection(run)
     decide_approval(run, request.id, False, "Keep the existing import paths.")
 
-    request_inspection_changes(
-        run,
-        "Do not make 'Move the package into src/.': Keep the existing import paths.",
-    )
-    inspection_request = build_inspection_request(run)
+    edit_request = build_edit_request(run)
 
-    assert (
-        inspection_request.revision_notes
-        == "Do not make 'Move the package into src/.': Keep the existing import paths."
-    )
-    assert (
-        inspection_request.prompt_context()["requested_inspection_revision"]
-        == inspection_request.revision_notes
+    assert run.state == WorkflowState.EDITING
+    assert [item.decision_notes for item in edit_request.declined_change_requests] == [
+        "Keep the existing import paths."
+    ]
+    assert edit_request.prompt_context()["declined_r2_change_requests"][0]["proposed_change"] == (
+        "Move the package into src/."
     )
 
 

@@ -70,15 +70,19 @@ uv run --frozen repo-curator run /path/to/repository
 
 The guided command prompts for required A/B/C classification and worker-requested
 facts, routes, launches read-only inspection, presents the inspection plan and
-R2 approvals, then resumes the same Codex thread for the approved edit scope. It
-shows the structured edit report and Git change summary, then asks the human to
+R2 approvals, then resumes the same Codex thread for the approved edit scope.
+Inspection assesses organization and visible local references before proposing
+any structural cleanup. The guided flow shows the structured edit report and Git
+change summary, then asks the human to
 approve the edits or request a revision. Approval runs deterministic validation;
 rejection resumes the same worker context with the requested changes. Re-running
 the same command resumes the most recently updated unfinished run for that repository.
 
 When declining an R2 approval request, the guided prompt accepts an optional
 explanation. The explanation is persisted with the decision and is supplied to
-Codex when it revises the inspection plan or later resumes an edit iteration.
+Codex when it later resumes an edit iteration. Declining one R2 action keeps the
+approved inspection plan and asks the worker to omit that action; declining the
+inspection plan itself requests a revised plan.
 
 Validation asks the human to enter the exact repository name required by the R1
 `uni-year-class` convention. Repo Curator never invents the university, year, or

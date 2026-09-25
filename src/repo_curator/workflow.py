@@ -360,8 +360,8 @@ def begin_worker_editing(run: RepositoryRun, backend: str) -> None:
         raise WorkflowError("An approved inspection report is required before editing.")
     if run.inspection_review.outcome != "approved":
         raise WorkflowError("The inspection plan must be approved before editing.")
-    if run.pending_approval_requests or run.rejected_inspection_approval_requests:
-        raise WorkflowError("All inspection approval requests must be approved before editing.")
+    if run.pending_approval_requests:
+        raise WorkflowError("All inspection approval requests must be decided before editing.")
     runtime = _worker_runtime_or_error(run)
     if runtime.backend != backend:
         raise WorkflowError("The existing worker runtime uses a different backend.")
@@ -519,8 +519,6 @@ def record_inspection_report(run: RepositoryRun, report: InspectionReport) -> No
 
 def approve_inspection(run: RepositoryRun, notes: str | None = None) -> None:
     _require_state(run, WorkflowState.WAITING_INSPECTION_REVIEW)
-    if run.rejected_inspection_approval_requests:
-        raise WorkflowError("Rejected approval requests require a revised inspection report.")
     run.inspection_review = ReviewDecision(outcome="approved", notes=notes)
     if run.pending_inspection_approval_requests:
         _transition(run, WorkflowState.WAITING_APPROVAL, "approve_inspection_plan")
@@ -587,11 +585,7 @@ def decide_approval(
     if run.pending_inspection_approval_requests:
         _touch(run)
         return
-    has_rejection = bool(run.rejected_inspection_approval_requests)
-    target_state = (
-        WorkflowState.WAITING_INSPECTION_REVIEW if has_rejection else WorkflowState.EDITING
-    )
-    _transition(run, target_state, "resolve_approval_requests")
+    _transition(run, WorkflowState.EDITING, "resolve_approval_requests")
 
 
 def record_edit_report(run: RepositoryRun, report: EditReport) -> None:

@@ -1258,14 +1258,7 @@ def _review_repository_rename(store: RunStore, run) -> bool:
 
 def _review_inspection_plan(store: RunStore, run) -> None:
     _print_inspection_report(run.inspection_report)
-    if run.rejected_inspection_approval_requests:
-        typer.echo("A proposed R2 action was rejected and the plan must be revised.")
-        request_inspection_changes(
-            run,
-            _rejected_inspection_notes(run)
-            or _prompt_review_notes("Describe the required plan changes"),
-        )
-    elif typer.confirm("Approve this inspection plan?", default=False):
+    if typer.confirm("Approve this inspection plan?", default=False):
         approve_inspection(run)
         typer.echo("Inspection plan approved.")
     else:
@@ -1276,7 +1269,9 @@ def _review_inspection_plan(store: RunStore, run) -> None:
 
 def _review_edit_result(store: RunStore, run) -> None:
     _print_edit_report(run)
+    typer.echo()
     _print_repository_change_summary(Path(run.repository_profile.identity.path))
+    typer.echo()
     typer.echo("Review the actual repository changes above before deciding.")
     if typer.confirm("Approve these edits?", default=False):
         approve_edit(run)
@@ -1291,7 +1286,9 @@ def _resolve_guided_approvals(store: RunStore, run) -> None:
     pending_requests = list(run.pending_approval_requests)
     if not pending_requests:
         raise WorkflowError("Waiting-approval state has no pending approval request.")
-    for request in pending_requests:
+    for index, request in enumerate(pending_requests):
+        if index:
+            typer.echo()
         _print_approval_request(request)
         approved = typer.confirm("Approve?", default=False)
         notes = None
@@ -1319,25 +1316,19 @@ def _prompt_optional_approval_notes() -> str | None:
     return notes or None
 
 
-def _rejected_inspection_notes(run) -> str | None:
-    notes = [
-        f"Do not make '{request.proposed_change}': {request.decision_notes}"
-        for request in run.rejected_inspection_approval_requests
-        if request.decision_notes
-    ]
-    return "\n".join(notes) or None
-
-
 def _print_inspection_report(report: InspectionReport | None) -> None:
     if report is None:
         raise WorkflowError("Inspection review requires an inspection report.")
-    typer.echo("Inspection")
-    typer.echo("─" * 36)
+    _print_report_heading("Inspection")
     typer.echo(report.summary)
+    typer.echo()
     _print_report_section("Important findings", report.important_findings)
+    typer.echo()
     _print_report_section("Proposed work", report.proposed_work)
+    typer.echo()
     _print_report_section("Expected validation", report.expected_validation)
     if report.approval_requests:
+        typer.echo()
         typer.echo("R2 changes needing a separate decision:")
         for request in report.approval_requests:
             if request.status.value == "pending":
@@ -1348,8 +1339,7 @@ def _print_edit_report(run) -> None:
     report = run.edit_report
     if report is None:
         raise WorkflowError("Edit review requires an edit report.")
-    typer.echo("Edit report")
-    typer.echo("─" * 36)
+    _print_report_heading("Edit report")
     _print_report_section("Modified files", report.modified_files)
     typer.echo()
     _print_report_section("Removed files", report.removed_files)
@@ -1364,9 +1354,8 @@ def _print_edit_report(run) -> None:
 
 
 def _print_validation_report(report) -> None:
-    typer.echo("Validation")
-    typer.echo("─" * 36)
-    typer.echo(f"Verification outcome: {report.verification_status.value}")
+    _print_report_heading("Validation")
+    _print_verification_outcome(report.verification_status.value)
     typer.echo(report.summary)
     typer.echo()
     for status, heading in (
@@ -1397,16 +1386,18 @@ def _print_validation_report(report) -> None:
 
 def _print_final_review(run, plan) -> None:
     """Render only the evidence and target relevant to the irreversible push."""
-    typer.echo("Final publication review")
-    typer.echo("─" * 36)
+    _print_report_heading("Final publication review")
     if run.validation_report is not None:
-        typer.echo(f"Verification outcome: {run.validation_report.verification_status.value}")
+        _print_verification_outcome(run.validation_report.verification_status.value)
         _print_report_section(
             "Unresolved concerns",
             run.validation_report.unresolved_concerns,
         )
+        typer.echo()
     if run.edit_report is not None:
         typer.echo(f"Source code changed: {'yes' if run.edit_report.source_code_changed else 'no'}")
+        typer.echo()
+    typer.secho("Publication target", fg=typer.colors.CYAN, bold=True)
     typer.echo(f"GitHub repository: {plan.repository}")
     typer.echo(f"GitHub description: {plan.description or '(leave empty)'}")
     typer.echo(f"Visibility: {plan.visibility}")
@@ -1422,17 +1413,41 @@ def _print_final_review(run, plan) -> None:
         typer.echo(
             f"Remote rename: {plan.owner}/{plan.existing_repository_name} → {plan.repository}"
         )
-    typer.echo("Reviewed Git changes:" if not plan.initialize_repository else "Initial commit files:")
+    typer.echo()
+    typer.secho(
+        "Reviewed Git changes:" if not plan.initialize_repository else "Initial commit files:",
+        fg=typer.colors.CYAN,
+        bold=True,
+    )
     if plan.worktree_status:
         for line in plan.worktree_status:
             typer.echo(f"- {_format_git_status_line(line)}")
     else:
         typer.echo("- no uncommitted changes; the current commit will be pushed.")
+    typer.echo()
     typer.echo("Publication safeguards: no force push, and no fork or foreign-owner target.")
 
 
+def _print_report_heading(title: str) -> None:
+    typer.secho(title, fg=typer.colors.BRIGHT_CYAN, bold=True)
+    typer.secho("─" * 36, fg=typer.colors.BRIGHT_CYAN)
+
+
+def _print_verification_outcome(outcome: str) -> None:
+    colors = {
+        "VERIFIED": typer.colors.GREEN,
+        "PARTIALLY_VERIFIED": typer.colors.YELLOW,
+        "BLOCKED": typer.colors.RED,
+    }
+    typer.secho(
+        f"Verification outcome: {outcome}",
+        fg=colors.get(outcome),
+        bold=True,
+    )
+
+
 def _print_report_section(title: str, values: list[str]) -> None:
-    typer.echo(f"{title}:")
+    typer.secho(f"{title}:", fg=typer.colors.CYAN, bold=True)
     if values:
         for value in values:
             typer.echo(f"- {value}")
@@ -1441,8 +1456,7 @@ def _print_report_section(title: str, values: list[str]) -> None:
 
 
 def _print_approval_request(request) -> None:
-    typer.echo("Approval required")
-    typer.echo("─" * 36)
+    _print_report_heading("Approval required")
     typer.echo(f"Problem: {request.problem}")
     typer.echo(f"Proposed change: {request.proposed_change}")
     typer.echo(f"Reason: {request.reason}")
@@ -1470,7 +1484,7 @@ def _print_repository_change_summary(repository_path: Path) -> None:
         return
     if status.returncode != 0:
         return
-    typer.echo("Repository changes (Git):")
+    typer.secho("Repository changes (Git):", fg=typer.colors.CYAN, bold=True)
     status_lines = status.stdout.strip().splitlines()
     if status_lines:
         for line in status_lines:
@@ -1478,7 +1492,8 @@ def _print_repository_change_summary(repository_path: Path) -> None:
     else:
         typer.echo("- Git reports no working-tree changes.")
     if diff_stat.returncode == 0 and diff_stat.stdout.strip():
-        typer.echo("Git diff summary:")
+        typer.echo()
+        typer.secho("Git diff summary:", fg=typer.colors.CYAN, bold=True)
         typer.echo(diff_stat.stdout.strip())
 
 
