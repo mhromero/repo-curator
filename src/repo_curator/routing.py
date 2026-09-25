@@ -332,6 +332,30 @@ def evaluate_escalation(
     )
 
 
+def next_capability_escalation(
+    current: RoutingDecision,
+    config: RoutingConfig,
+) -> tuple[CapabilityCostClass, ReasoningEffort, EscalationAdjustment] | None:
+    """Return the next configured capability step for an explicit escalation."""
+    next_class = {
+        CapabilityCostClass.ECONOMY: CapabilityCostClass.ENHANCED,
+        CapabilityCostClass.ENHANCED: CapabilityCostClass.ESCALATION,
+    }.get(current.capability_cost_class)
+    if next_class is None:
+        return None
+    requested_effort = max(current.reasoning_effort, ReasoningEffort.HIGH, key=_effort_rank)
+    try:
+        target = config.resolve(next_class, requested_effort)
+    except RoutingError:
+        return None
+    adjustment = (
+        EscalationAdjustment.SWITCH_MODEL_FAMILY
+        if target.reasoning_effort == current.reasoning_effort
+        else EscalationAdjustment.CHANGE_MODEL_AND_EFFORT
+    )
+    return next_class, target.reasoning_effort, adjustment
+
+
 def migrate_legacy_provider_model(
     decision: RoutingDecision,
     config: RoutingConfig,

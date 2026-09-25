@@ -45,7 +45,7 @@ Portfolio value plus R4 project extent determine work depth. R4 cleanup effort d
 
 The initial policy resolves C/light to Luna/low, B/moderate to Luna/medium, A/light to Luna/low, and B/A substantial effort to an enhanced/high configuration, which defaults to Terra/high. Sol is never selected initially. Repository size, age, file count, or portfolio importance alone do not select a stronger configuration.
 
-R6 defines and persists concrete escalation requests and decisions, including either a reasoning-effort increase, model-family switch, or both. It does not launch a worker or accept worker requests through the CLI yet.
+R6 defines and persists concrete escalation requests and decisions, including either a reasoning-effort increase, model-family switch, or both. The guided final-review flow may apply a human-confirmed safe-edit-plan escalation to the next revision; worker-originated escalation requests are not accepted through the CLI yet.
 
 ### 5. Persistent Codex worker
 

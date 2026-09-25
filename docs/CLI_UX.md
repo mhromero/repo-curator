@@ -67,6 +67,10 @@ use should not require knowledge of the internal state machine.
   repository naming when no replacement is mentioned; only ambiguous candidates
   use explicit manual entry. A blank decline returns to final review; ending a
   pending publication session requires its own explicit confirmation.
+- When a nonblank final-review revision reveals that the approved plan missed
+  important repository work, ask the human to confirm that diagnosis. Then show
+  the next configured capability route and require a separate confirmation before
+  applying it to the revision. The route change grants no additional edit authority.
 - Resume the existing worker context when continuing worker work.
 - Never require the user to manually copy worker output, IDs, or structured
   state between commands.

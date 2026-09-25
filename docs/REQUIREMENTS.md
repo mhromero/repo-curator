@@ -329,13 +329,19 @@ Current candidate worker progression is Luna → Terra → Sol, with Astra reser
 
 ### Escalation
 
-A worker may request escalation only for a concrete blocker, such as:
+A concrete worker blocker, or a human-confirmed final-review plan miss, may request
+escalation. Examples of concrete blockers include:
 
 - repeated inability to understand relevant architecture;
 - difficult dependency conflicts requiring substantial reasoning;
 - ambiguous interactions among components;
 - unresolved failure diagnosis after reasonable attempts;
 - inability to produce a safe plan within current capability.
+
+A final-review plan miss is not inferred from a rejection count: the human must
+explicitly confirm that the approved plan omitted important repository work and
+separately approve the proposed next configured route. The route change grants no
+additional edit authority.
 
 Repository size, age, portfolio value, file count, or a missing README are not sufficient reasons by themselves.
 

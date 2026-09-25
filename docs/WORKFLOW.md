@@ -121,6 +121,10 @@ The worker may reason and edit, but the human controls factual claims, risky cha
     the existing Codex context. A decline without requested changes remains at
     `READY_FOR_FINAL_REVIEW` and makes no Git or GitHub changes; the guided CLI
     returns to the final review unless the human explicitly ends that session.
+    When the human confirms that requested changes expose an insufficient approved
+    plan, the guided CLI may offer the next configured R6 capability route for
+    that revision. It changes route only after separate confirmation and retains
+    the same worker context and edit-authority limits.
 
 12. FINISHED
     Final approval plus a successful recorded publication closes the run.
@@ -182,8 +186,9 @@ Sol is escalation-only. Higher work depth does not itself select a stronger mode
 An escalation record requires a concrete blocker, attempts already made, why the
 new configuration should help, and confirmation that the work remains within
 approved scope. It may increase reasoning effort within a model family, switch
-families, or change both. R6 persists and evaluates that contract but does not yet
-receive or act on worker escalation requests.
+families, or change both. The guided final-review flow can create this record when
+the human confirms a safe-edit-plan miss and separately approves the suggested
+next route. Worker-originated escalation requests remain unimplemented.
 
 ## Why one Codex worker?
 

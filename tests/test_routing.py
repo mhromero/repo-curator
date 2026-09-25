@@ -23,6 +23,7 @@ from repo_curator.routing import (
     WorkerConfiguration,
     evaluate_escalation,
     migrate_legacy_provider_model,
+    next_capability_escalation,
     route_repository,
 )
 from repo_curator.run_store import RunStore
@@ -30,6 +31,7 @@ from repo_curator.scanner import scan_repository
 from repo_curator.workflow import (
     RepositoryRun,
     WorkflowError,
+    apply_approved_escalation,
     record_escalation,
     route_run,
     set_portfolio_classification,
@@ -209,6 +211,46 @@ def test_effort_then_model_family_escalations_are_both_supported(tmp_path: Path)
     assert family_decision.resolved_configuration is not None
     assert family_decision.resolved_configuration.model_family == "terra"
     assert family_decision.resolved_configuration.reasoning_effort == ReasoningEffort.MEDIUM
+
+
+def test_next_capability_escalation_selects_the_next_configured_family(tmp_path: Path) -> None:
+    profile, triage_result = _scan_and_triage(tmp_path)
+    current = route_repository(profile, triage_result, PortfolioClassification.B, RoutingConfig.from_environment())
+
+    proposal = next_capability_escalation(current, RoutingConfig.from_environment())
+
+    assert proposal is not None
+    cost_class, effort, adjustment = proposal
+    assert cost_class == CapabilityCostClass.ENHANCED
+    assert effort == ReasoningEffort.HIGH
+    assert adjustment == EscalationAdjustment.CHANGE_MODEL_AND_EFFORT
+
+
+def test_approved_escalation_becomes_the_route_used_by_the_next_worker(tmp_path: Path) -> None:
+    profile, triage_result = _scan_and_triage(tmp_path)
+    run = start_run(profile, triage_result)
+    set_portfolio_classification(run, PortfolioClassification.B)
+    initial = route_run(run, RoutingConfig.from_environment())
+    requested_class, requested_effort, adjustment = next_capability_escalation(
+        initial, RoutingConfig.from_environment()
+    )
+
+    decision = apply_approved_escalation(
+        run,
+        _request(
+            initial,
+            requested_class=requested_class,
+            requested_effort=requested_effort,
+            adjustment=adjustment,
+        ),
+        RoutingConfig.from_environment(),
+    )
+
+    assert decision.approved is True
+    assert run.routing_decision is not None
+    assert run.routing_decision.model_family == "terra"
+    assert run.routing_decision.reasoning_effort == ReasoningEffort.HIGH
+    assert run.escalations[-1].decision == decision
 
 
 def test_sol_requires_an_enhanced_current_configuration(tmp_path: Path) -> None:

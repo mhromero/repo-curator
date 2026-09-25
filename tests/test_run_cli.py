@@ -21,6 +21,7 @@ from repo_curator.cli import (
     _review_tracked_junk,
     _retire_resolved_local_naming_concerns,
     _separate_operations,
+    _offer_plan_miss_escalation,
     app,
 )
 from repo_curator.models import (
@@ -29,6 +30,7 @@ from repo_curator.models import (
     TriageJudgments,
     TriageResult,
 )
+from repo_curator.routing import CapabilityCostClass, ReasoningEffort, RoutingDecision, WorkDepth
 from repo_curator.publication import PublicationInputRequired, PublicationPlan, PublicationPushError
 from repo_curator.scanner import scan_repository
 from repo_curator.run_store import RunStore
@@ -114,6 +116,44 @@ def test_approval_request_formats_an_unambiguous_multi_rename_sentence() -> None
         "Rename HW2_Simplified_Object_Detection_24_25-2.ipynb → object-detection.ipynb",
         "Rename colorization-maria-finalv.ipynb → image-colorization.ipynb",
     ]
+
+
+def test_final_review_can_apply_a_human_confirmed_plan_miss_escalation(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    run = RepositoryRun(
+        id="9" * 32,
+        repository_profile=scan_repository(tmp_path).repository_profile,
+        state=WorkflowState.READY_FOR_FINAL_REVIEW,
+        routing_decision=RoutingDecision(
+            policy_version="test",
+            work_depth=WorkDepth.STANDARD,
+            capability_cost_class=CapabilityCostClass.ECONOMY,
+            model_family="luna",
+            provider_model="luna-test",
+            reasoning_effort=ReasoningEffort.MEDIUM,
+            portfolio_classification=PortfolioClassification.B,
+            project_extent="single_project",
+            cleanup_effort="moderate",
+        ),
+    )
+    store = RunStore(tmp_path / "state")
+    store.create(run)
+    confirmations = iter([True, True])
+    monkeypatch.setattr(
+        "repo_curator.cli.typer.confirm", lambda *_args, **_kwargs: next(confirmations)
+    )
+
+    _offer_plan_miss_escalation(store, run, "The plan missed asset organization.")
+
+    saved_run = store.load(run.id)
+    assert saved_run.routing_decision is not None
+    assert saved_run.routing_decision.model_family == "terra"
+    assert saved_run.routing_decision.reasoning_effort == ReasoningEffort.HIGH
+    assert len(saved_run.escalations) == 1
+    assert "Suggested worker escalation" in capsys.readouterr().out
 
 
 def test_required_fact_prompt_separates_question_from_response_field(monkeypatch, capsys) -> None:

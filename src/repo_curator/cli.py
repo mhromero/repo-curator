@@ -27,7 +27,14 @@ from .publication import (
     format_github_description,
 )
 from .run_store import RunStore
-from .routing import RoutingConfig, RoutingError, migrate_legacy_provider_model
+from .routing import (
+    EscalationBlocker,
+    EscalationRequest,
+    RoutingConfig,
+    RoutingError,
+    migrate_legacy_provider_model,
+    next_capability_escalation,
+)
 from .scanner import scan_repository
 from .signals import must_not_publish_disposable
 from .triage import TriageProviderError, triage_repository, triage_summary
@@ -50,6 +57,7 @@ from .workflow import (
     approve_final_review,
     approve_inspection,
     add_validation_note,
+    apply_approved_escalation,
     begin_inspection,
     begin_worker_editing,
     begin_worker_inspection,
@@ -1334,6 +1342,7 @@ def _review_and_publish(store: RunStore, run, publisher: GitHubCliPublisher, pla
                 show_default=False,
             ).strip() or None
             if notes:
+                _offer_plan_miss_escalation(store, run, notes)
                 replacement_name = _prompt_updated_repository_name(run, notes)
                 if replacement_name is not None:
                     record_fact(run, "repository_naming", replacement_name)
@@ -1379,6 +1388,54 @@ def _review_and_publish(store: RunStore, run, publisher: GitHubCliPublisher, pla
     typer.echo(f"Published {result.repository} branch {result.branch} at {result.commit_sha}.")
     typer.echo("State: FINISHED")
     return False
+
+
+def _offer_plan_miss_escalation(store: RunStore, run, notes: str) -> None:
+    """Offer, never infer, a stronger route when final review exposes a missed plan."""
+    if run.routing_decision is None:
+        return
+    if not typer.confirm("Did the approved plan miss important repository work?", default=False):
+        return
+    config = RoutingConfig.from_environment()
+    proposal = next_capability_escalation(run.routing_decision, config)
+    if proposal is None:
+        typer.echo("No stronger configured worker route is available for this revision.")
+        return
+    requested_class, requested_effort, adjustment = proposal
+    current = run.routing_decision
+    target = config.resolve(requested_class, requested_effort)
+    _print_report_heading("Suggested worker escalation")
+    typer.echo(f"Current route: {current.model_family} ({current.provider_model}); {current.reasoning_effort.value}")
+    typer.echo(f"Suggested route: {target.model_family} ({target.provider_model}); {target.reasoning_effort.value}")
+    _print_wrapped(
+        "Reason: final review identified repository work that the approved plan did not cover. "
+        "This changes worker capability only; it grants no additional edit authority."
+    )
+    if not typer.confirm("Use this stronger route for the requested revision?", default=False):
+        typer.echo("Continuing the revision on the current worker route.")
+        return
+    request = EscalationRequest(
+        current_model_family=current.model_family,
+        current_provider_model=current.provider_model,
+        current_capability_cost_class=current.capability_cost_class,
+        current_reasoning_effort=current.reasoning_effort,
+        requested_capability_cost_class=requested_class,
+        requested_reasoning_effort=requested_effort,
+        adjustment=adjustment,
+        blocker=EscalationBlocker.SAFE_EDIT_PLAN,
+        attempted=["The existing worker produced an approved plan and edit iteration."],
+        why_additional_capability_should_help=(
+            "The human identified important repository work omitted from the approved plan: "
+            + notes
+        ),
+        within_approved_scope=True,
+    )
+    decision = apply_approved_escalation(run, request, config)
+    if not decision.approved:
+        typer.echo(f"The escalation could not be applied: {decision.reason_code}.")
+        return
+    store.save(run)
+    typer.echo("Stronger route recorded; the existing Codex context will resume with it.")
 
 
 def _prompt_updated_repository_name(run, notes: str) -> str | None:

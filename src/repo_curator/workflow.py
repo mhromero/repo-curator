@@ -537,6 +537,31 @@ def record_escalation(
     return decision
 
 
+def apply_approved_escalation(
+    run: RepositoryRun,
+    request: EscalationRequest,
+    config: RoutingConfig,
+) -> EscalationDecision:
+    """Record an escalation and make its approved configuration the next worker route."""
+    decision = record_escalation(run, request, config)
+    if not decision.approved or decision.resolved_configuration is None:
+        return decision
+    current = run.routing_decision
+    assert current is not None
+    resolved = decision.resolved_configuration
+    run.routing_decision = current.model_copy(
+        update={
+            "capability_cost_class": request.requested_capability_cost_class,
+            "model_family": resolved.model_family,
+            "provider_model": resolved.provider_model,
+            "reasoning_effort": resolved.reasoning_effort,
+            "reason_codes": [*current.reason_codes, "final_review_plan_miss_escalation"],
+        }
+    )
+    _touch(run)
+    return decision
+
+
 def record_inspection_report(run: RepositoryRun, report: InspectionReport) -> None:
     _require_state(run, WorkflowState.INSPECTING)
     run.inspection_report = report
