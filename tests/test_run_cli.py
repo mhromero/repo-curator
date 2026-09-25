@@ -18,7 +18,7 @@ from repo_curator.models import (
     TriageJudgments,
     TriageResult,
 )
-from repo_curator.publication import PublicationInputRequired, PublicationPlan
+from repo_curator.publication import PublicationInputRequired, PublicationPlan, PublicationPushError
 from repo_curator.scanner import scan_repository
 from repo_curator.run_store import RunStore
 from repo_curator.workflow import (
@@ -108,6 +108,56 @@ def test_run_cli_persists_classification_and_shows_triage_signals(
     assert show.exit_code == 0
     assert "Portfolio classification: B" in show.stdout
     assert "suggestions, not required facts" in show.stdout
+
+
+def test_evaluation_export_cli_writes_sanitized_result(tmp_path: Path) -> None:
+    repository = tmp_path / "private-repository"
+    repository.mkdir()
+    profile = scan_repository(repository).repository_profile
+    run = RepositoryRun(id="9" * 32, repository_profile=profile)
+    state_root = tmp_path / "state"
+    RunStore(state_root).create(run)
+    case_file = tmp_path / "case.json"
+    case_file.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "case_id": "local-evaluation-case",
+                "repository_kind": "student_coursework",
+            }
+        ),
+        encoding="utf-8",
+    )
+    output_file = tmp_path / "result.json"
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "evaluation",
+            "export",
+            run.id,
+            str(case_file),
+            str(output_file),
+            "--state-root",
+            str(state_root),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Sanitized evaluation result:" in result.stdout
+    content = output_file.read_text(encoding="utf-8")
+    assert "private-repository" not in content
+    assert json.loads(content)["case"]["case_id"] == "local-evaluation-case"
+
+    second_output = tmp_path / "result-two.json"
+    second_output.write_text(content, encoding="utf-8")
+    comparison = CliRunner().invoke(
+        app,
+        ["evaluation", "compare", str(output_file), str(second_output), "--json"],
+    )
+
+    assert comparison.exit_code == 0
+    assert len(json.loads(comparison.stdout)["results"]) == 2
 
 
 def test_git_status_is_rendered_in_plain_language() -> None:
@@ -676,6 +726,82 @@ def test_guided_final_review_collects_visibility_then_publishes_after_explicit_a
     assert saved_run.state == WorkflowState.FINISHED
     assert saved_run.final_review is not None and saved_run.final_review.approved is True
     assert saved_run.publication_result is not None
+
+
+def test_guided_final_review_offers_approved_ssh_retry_after_https_transport_failure(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repository = tmp_path / "uni-2026-class"
+    repository.mkdir()
+    profile = scan_repository(repository).repository_profile
+    run = RepositoryRun(
+        id="e" * 32,
+        repository_profile=profile,
+        state=WorkflowState.READY_FOR_FINAL_REVIEW,
+        portfolio_classification=PortfolioClassification.B,
+        human_facts={
+            "repository_naming": HumanFact(key="repository_naming", value="uni-2026-class")
+        },
+    )
+    state_root = tmp_path / "state"
+    RunStore(state_root).create(run)
+
+    class FakePublisher:
+        retry_called = False
+
+        def __init__(self, **_kwargs) -> None:
+            pass
+
+        def prepare(self, path: Path, *, expected_name: str, visibility: str | None):
+            if visibility is None:
+                raise PublicationInputRequired("github_visibility")
+            return PublicationPlan(
+                repository_path=path.resolve(),
+                owner="maria",
+                name=expected_name,
+                branch="main",
+                visibility=visibility,
+                remote_name="origin",
+                create_repository=False,
+                existing_repository_name=expected_name,
+                rename_existing_repository=False,
+                existing_remote_url="https://github.com/maria/uni-2026-class.git",
+                worktree_status=(),
+                git_transport="https",
+            )
+
+        def publish(self, plan: PublicationPlan) -> PublicationResult:
+            raise PublicationPushError(
+                plan=plan,
+                commit_sha="abc123",
+                detail="send-pack: unexpected disconnect",
+                ssh_retry_available=True,
+            )
+
+        def retry_push_with_ssh(self, error: PublicationPushError) -> PublicationResult:
+            FakePublisher.retry_called = True
+            return PublicationResult(
+                repository=error.plan.repository,
+                branch=error.plan.branch,
+                commit_sha=error.commit_sha,
+                created_repository=False,
+            )
+
+    monkeypatch.setattr("repo_curator.cli.GitHubCliPublisher", FakePublisher)
+    result = CliRunner().invoke(
+        app,
+        ["run", str(repository), "--state-root", str(state_root)],
+        input="public\ny\ny\ny\n",
+    )
+
+    saved_run = RunStore(state_root).load(run.id)
+    assert result.exit_code == 0
+    assert "Git transport: HTTPS" in result.stdout
+    assert "GitHub did not confirm the push." in result.stdout
+    assert "Retry this approved push over SSH?" in result.stdout
+    assert FakePublisher.retry_called is True
+    assert saved_run.state == WorkflowState.FINISHED
 
 
 def test_guided_validation_continues_directly_to_final_publication_review(

@@ -22,6 +22,24 @@ class PublicationInputRequired(PublicationError):
         super().__init__(f'Publication requires the human-confirmed "{key}" value.')
 
 
+class PublicationPushError(PublicationError):
+    """A push failed after the approved local publication changes were made."""
+
+    def __init__(
+        self,
+        *,
+        plan: "PublicationPlan",
+        commit_sha: str,
+        detail: str,
+        ssh_retry_available: bool,
+    ) -> None:
+        self.plan = plan
+        self.commit_sha = commit_sha
+        self.detail = detail
+        self.ssh_retry_available = ssh_retry_available
+        super().__init__(f"Git push failed: {detail}")
+
+
 class CommandResult(Protocol):
     returncode: int
     stdout: str
@@ -46,6 +64,7 @@ class PublicationPlan:
     worktree_status: tuple[str, ...]
     initialize_repository: bool = False
     description: str | None = None
+    git_transport: str = "https"
 
     @property
     def repository(self) -> str:
@@ -109,6 +128,7 @@ class GitHubCliPublisher:
                 worktree_status=status,
                 initialize_repository=False,
                 description=description,
+                git_transport=self._preferred_git_transport(path),
             )
 
         remote_owner, remote_name = _github_remote_identity(remote_url)
@@ -139,6 +159,7 @@ class GitHubCliPublisher:
             worktree_status=status,
             initialize_repository=False,
             description=description,
+            git_transport=_git_transport(remote_url),
         )
 
     def publish(self, plan: PublicationPlan) -> PublicationResult:
@@ -180,6 +201,13 @@ class GitHubCliPublisher:
                 "--remote",
                 "origin",
             )
+            self._git(
+                current.repository_path,
+                "remote",
+                "set-url",
+                "origin",
+                _github_remote_url(current.git_transport, current.owner, current.name),
+            )
         elif current.rename_existing_repository:
             assert current.existing_repository_name is not None
             assert current.existing_remote_url is not None
@@ -207,12 +235,7 @@ class GitHubCliPublisher:
                 "--description",
                 current.description,
             )
-        self._git(
-            current.repository_path,
-            "push",
-            "origin",
-            f"HEAD:refs/heads/{current.branch}",
-        )
+        self._push_or_confirm(current, commit_sha)
         return PublicationResult(
             repository=current.repository,
             branch=current.branch,
@@ -255,7 +278,98 @@ class GitHubCliPublisher:
             worktree_status=status,
             initialize_repository=True,
             description=description,
+            git_transport=self._preferred_git_transport(path),
         )
+
+    def retry_push_with_ssh(self, error: PublicationPushError) -> PublicationResult:
+        """Retry an approved HTTPS transport failure against the same remote over SSH."""
+        if not error.ssh_retry_available:
+            raise PublicationError("SSH retry is not available for this publication failure.")
+        current = error.plan
+        self._git(
+            current.repository_path,
+            "remote",
+            "set-url",
+            "origin",
+            _github_remote_url("ssh", current.owner, current.name),
+        )
+        try:
+            self._git(
+                current.repository_path,
+                "push",
+                "origin",
+                f"HEAD:refs/heads/{current.branch}",
+            )
+        except PublicationError as push_error:
+            if self._remote_branch_matches(current.repository_path, current.branch, error.commit_sha):
+                return PublicationResult(
+                    repository=current.repository,
+                    branch=current.branch,
+                    commit_sha=error.commit_sha,
+                    created_repository=current.create_repository,
+                )
+            raise PublicationError(
+                "SSH retry did not receive confirmation from GitHub: "
+                f"{push_error}"
+            ) from push_error
+        return PublicationResult(
+            repository=current.repository,
+            branch=current.branch,
+            commit_sha=error.commit_sha,
+            created_repository=current.create_repository,
+        )
+
+    def _push_or_confirm(self, plan: PublicationPlan, commit_sha: str) -> None:
+        try:
+            self._git(
+                plan.repository_path,
+                "push",
+                "origin",
+                f"HEAD:refs/heads/{plan.branch}",
+            )
+        except PublicationError as push_error:
+            if self._remote_branch_matches(plan.repository_path, plan.branch, commit_sha):
+                return
+            detail = str(push_error).removeprefix("Git command failed: ")
+            raise PublicationPushError(
+                plan=plan,
+                commit_sha=commit_sha,
+                detail=detail,
+                ssh_retry_available=(
+                    plan.git_transport == "https"
+                    and _looks_like_transport_failure(detail)
+                    and self._ssh_authentication_available(plan.repository_path)
+                ),
+            ) from push_error
+
+    def _remote_branch_matches(self, path: Path, branch: str, commit_sha: str) -> bool:
+        result = self._run(
+            [self.git_bin, "-C", str(path), "ls-remote", "origin", f"refs/heads/{branch}"],
+            path,
+        )
+        if result.returncode != 0:
+            return False
+        expected_ref = f"refs/heads/{branch}"
+        return any(
+            line.split(maxsplit=1) == [commit_sha, expected_ref]
+            for line in result.stdout.splitlines()
+        )
+
+    def _ssh_authentication_available(self, path: Path) -> bool:
+        result = self._run(
+            ["ssh", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", "-T", "git@github.com"],
+            path,
+        )
+        response = f"{result.stdout}\n{result.stderr}".casefold()
+        return "successfully authenticated" in response
+
+    def _preferred_git_transport(self, path: Path) -> str:
+        protocol = self._gh(path, "config", "get", "git_protocol", "--host", "github.com").strip()
+        if protocol not in {"https", "ssh"}:
+            raise PublicationError(
+                'GitHub CLI git_protocol must be "https" or "ssh" for github.com.'
+            )
+        return protocol
 
     def _is_git_repository(self, path: Path) -> bool:
         result = self._run([self.git_bin, "-C", str(path), "rev-parse", "--is-inside-work-tree"], path)
@@ -345,6 +459,7 @@ def _plan_signature(plan: PublicationPlan) -> tuple[object, ...]:
         plan.worktree_status,
         plan.initialize_repository,
         plan.description,
+        plan.git_transport,
     )
 
 
@@ -356,6 +471,36 @@ def _renamed_remote_url(url: str, owner: str, name: str) -> str:
     if match is None:
         raise PublicationError("Origin must be a GitHub repository remote; Repo Curator will not retarget it.")
     return f"{match.group(1)}{owner}/{name}{match.group(2) or ''}"
+
+
+def _git_transport(url: str) -> str:
+    if url.strip().startswith("https://github.com/"):
+        return "https"
+    if url.strip().startswith(("git@github.com:", "ssh://git@github.com/")):
+        return "ssh"
+    raise PublicationError("Origin must be a GitHub repository remote; Repo Curator will not retarget it.")
+
+
+def _github_remote_url(transport: str, owner: str, name: str) -> str:
+    if transport == "https":
+        return f"https://github.com/{owner}/{name}.git"
+    if transport == "ssh":
+        return f"git@github.com:{owner}/{name}.git"
+    raise PublicationError(f"Unsupported Git transport: {transport}")
+
+
+def _looks_like_transport_failure(detail: str) -> bool:
+    normalized = detail.casefold()
+    return any(
+        signal in normalized
+        for signal in (
+            "rpc failed",
+            "send-pack:",
+            "unexpected disconnect",
+            "remote end hung up unexpectedly",
+            "curl ",
+        )
+    )
 
 
 def _initial_worktree_status(path: Path) -> tuple[str, ...]:

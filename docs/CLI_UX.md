@@ -30,12 +30,18 @@ use should not require knowledge of the internal state machine.
   declined rename, offer an optional persisted note and leave the workflow safely
   stopped at `BLOCKED`.
 - At final review, show validation status and concerns, source-code-change status,
-  the exact GitHub target, description, visibility, branch, and reviewed Git
+  the exact GitHub target, description, visibility, branch, Git transport, and reviewed Git
   changes before asking for publication approval.
 - Do not run Git or GitHub mutating commands until that final approval. Explain
   when a new repository will be created and that pushes are non-force. For a
   folder without Git metadata, explicitly show the planned Git initialization
   branch and initial-commit files before asking for that approval.
+- Preserve an existing remote's HTTPS or SSH URL. For a newly created repository,
+  use the authenticated GitHub CLI `git_protocol` preference and show it in final
+  review. If an approved HTTPS push has a transport-style failure, first verify the
+  remote branch did not receive the reviewed commit. Offer an SSH retry only when
+  local SSH authentication is available; it must keep the reviewed GitHub target
+  and branch unchanged and state that it changes only the local origin URL.
 - A nonblank final-review decline is a requested repository revision: persist the
   note, offer confirmation of one unambiguous R1-shaped replacement name mentioned
   in that note, and resume the same Codex editing context. It does not ask about

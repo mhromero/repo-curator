@@ -94,7 +94,7 @@ tests when present. They do not install dependencies, use a network, commit, pus
 or publish. `VERIFIED` and `PARTIALLY_VERIFIED` reach
 `READY_FOR_FINAL_REVIEW`; `BLOCKED` remains stopped for human action. At final
 review, the guided command shows the validation outcome, unresolved concerns,
-GitHub target, visibility, branch, and exact Git changes. Approval commits those
+GitHub target, visibility, branch, Git transport, and exact Git changes. Approval commits those
 reviewed changes and performs a normal non-force push. It creates a missing
 repository only for the authenticated GitHub user. For a plain local folder, the
 same final review explicitly shows that it will initialize Git on `main` and lists
@@ -102,6 +102,14 @@ the files for its initial commit; no `git init` occurs before approval. Repo
 Curator never renames or retargets an existing remote without showing it in final
 review, and refuses forks or
 foreign/organization-owned remotes.
+
+Existing GitHub remotes retain their configured HTTPS or SSH URL. New repositories
+use the authenticated GitHub CLI's `git_protocol` preference; set it with
+`gh config set git_protocol ssh --host github.com` when SSH is preferred. If an
+approved HTTPS push ends with a transport-style failure, Repo Curator checks
+whether the reviewed branch actually reached GitHub. When it did not and local SSH
+authentication is available, the guided CLI offers one explicit retry over SSH to
+the same reviewed repository and branch.
 
 When supported by repository evidence, the editing worker also returns a concise
 factual GitHub About description. Final review shows the exact description, and
@@ -182,6 +190,26 @@ context block into the phase template; it does not load prompts from the target
 repository or ambient Codex configuration. Update an asset and its rendering tests
 when changing worker behavior. Python remains responsible for sandbox selection,
 schemas, workflow transitions, approval gates, and Git/GitHub safeguards.
+
+### Real-repository evaluation
+
+Evaluations are separate from unit tests. After a real run reaches a useful
+stopping point, export a sanitized result using a version-controlled evaluation
+case:
+
+```sh
+uv run --frozen repo-curator evaluation export <run-id> \
+  evaluations/cases/my-case.json \
+  evaluations/results/my-case-run-01.json
+```
+
+The export does not invoke providers or modify the run. It excludes target paths,
+file names, repository content, fact values, notes, worker transcripts, thread
+IDs, remote identities, and commit IDs. Complete its qualitative human judgments
+before sharing it, then compare multiple results with
+`repo-curator evaluation compare ... --json`. See
+[the evaluation guide](evaluations/README.md) for the case schema, recorded
+evidence, and current telemetry gaps.
 
 ## Development
 

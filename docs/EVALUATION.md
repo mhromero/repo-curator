@@ -6,7 +6,7 @@ The current implementation includes the static scanner, TypeSafe/Jev triage, det
 
 ## Unit tests
 
-The current suite has ninety-eight deterministic tests covering scanner inventory and language signals, ignored directories, non-execution, R3 evidence, summary redaction and budgeting, local Git metadata, symlinks, TypeSafe question construction, provider response validation, mocked CLI output, the guided path-based user journey, inspection continuation and plan revision, guided edit review and retry behavior, deterministic validation outcomes, naming confirmation, direct local-rename approval from a blocked naming mismatch, final GitHub review, final-review revision resumption, conservative publication planning, explicit owned-remote rename, plain-folder Git initialization, non-force push behavior, and blocked-validation notes, R2 approval boundaries and rejection explanations, human-readable Git status, persisted prompt rendering, persistence, R6 work-depth/model/effort routing, model configuration, escalation policy, and Codex CLI command/output/failure handling. It uses fake Codex and GitHub command runners and makes no paid TypeSafe or Codex calls or real GitHub mutations.
+The current suite has one hundred and five deterministic tests covering scanner inventory and language signals, ignored directories, non-execution, R3 evidence, summary redaction and budgeting, local Git metadata, symlinks, TypeSafe question construction, provider response validation, mocked CLI output, the guided path-based user journey, inspection continuation and plan revision, guided edit review and retry behavior, deterministic validation outcomes, naming confirmation, direct local-rename approval from a blocked naming mismatch, final GitHub review, final-review revision resumption, conservative publication planning, configured Git transport, post-push remote confirmation, explicit SSH retry, explicit owned-remote rename, plain-folder Git initialization, non-force push behavior, and blocked-validation notes, R2 approval boundaries and rejection explanations, human-readable Git status, persisted prompt rendering, sanitized evaluation export/comparison, persistence, R6 work-depth/model/effort routing, model configuration, escalation policy, and Codex CLI command/output/failure handling. It uses fake Codex and GitHub command runners and makes no paid TypeSafe or Codex calls or real GitHub mutations.
 
 Future unit-test coverage should include:
 
@@ -21,6 +21,23 @@ Future unit-test coverage should include:
 - target repositories never receive internal Repo Curator state.
 
 Unit tests should not make paid Jev or Codex calls.
+
+## First real-repository evaluation phase
+
+The first evaluation phase collects evidence; it does not tune R4 clarification
+handling or the deterministic R6 router. The normal workflow remains the
+execution policy. The evaluator exports a sanitized projection of a real run into
+`evaluations/results/`, then records qualitative human judgments in that result.
+The version-controlled case/result layout, command examples, exact automatic
+fields, human fields, privacy exclusions, and telemetry gaps are documented in
+[`evaluations/README.md`](../evaluations/README.md).
+
+This phase is intended to observe R4 triage choices and clarification signals, R6
+route/model/effort selection, human intervention usefulness, preservation of
+student work, validation/publication outcomes, retries/failures/escalations, and
+available duration/usage telemetry. Uniform result records support later
+side-by-side and shadow/offline comparisons without allowing an alternative route
+or Jev recommendation to control a real run.
 
 ## Planned triage evals
 

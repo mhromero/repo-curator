@@ -5,7 +5,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from repo_curator.publication import GitHubCliPublisher, PublicationError, PublicationInputRequired
+from repo_curator.publication import (
+    GitHubCliPublisher,
+    PublicationError,
+    PublicationInputRequired,
+    PublicationPushError,
+)
 
 
 class FakeRunner:
@@ -52,6 +57,13 @@ def test_publisher_creates_confirmed_personal_repository_then_non_force_pushes(t
     assert ("gh", "repo", "create", "maria/vgtu-2024-intelligent-systems", "--public", "--source", str(tmp_path.resolve()), "--remote", "origin") in runner.calls
     assert ("gh", "repo", "edit", "maria/vgtu-2024-intelligent-systems", "--description", description) in runner.calls
     assert ("git", "push", "origin", "HEAD:refs/heads/main") in runner.calls
+    assert (
+        "git",
+        "remote",
+        "set-url",
+        "origin",
+        "https://github.com/maria/vgtu-2024-intelligent-systems.git",
+    ) in runner.calls
     assert all("--force" not in command for command in runner.calls)
 
 
@@ -73,10 +85,15 @@ def test_publisher_initializes_plain_folder_only_during_approved_publish(tmp_pat
             ],
             ("gh", "auth", "status", "--hostname", "github.com"): [(0, "", ""), (0, "", "")],
             ("gh", "api", "user", "--jq", ".login"): [(0, "maria\n", ""), (0, "maria\n", "")],
+            ("gh", "config", "get", "git_protocol", "--host", "github.com"): [
+                (0, "ssh\n", ""),
+                (0, "ssh\n", ""),
+            ],
             ("git", "init", "--initial-branch", "main"): [(0, "", "")],
             ("git", "add", "-A"): [(0, "", "")],
             ("git", "commit", "-m", "Prepare repository for publication"): [(0, "", "")],
             ("git", "rev-parse", "HEAD"): [(0, "abc123\n", "")],
+            ("git", "remote", "set-url", "origin", "git@github.com:maria/vgtu-2024-intelligent-systems.git"): [(0, "", "")],
             ("git", "push", "origin", "HEAD:refs/heads/main"): [(0, "", "")],
         }
     )
@@ -94,6 +111,13 @@ def test_publisher_initializes_plain_folder_only_during_approved_publish(tmp_pat
     assert ("git", "init", "--initial-branch", "main") in runner.calls
     assert ("git", "add", "-A") in runner.calls
     assert ("git", "push", "origin", "HEAD:refs/heads/main") in runner.calls
+    assert (
+        "git",
+        "remote",
+        "set-url",
+        "origin",
+        "git@github.com:maria/vgtu-2024-intelligent-systems.git",
+    ) in runner.calls
 
 
 def test_publisher_refuses_foreign_existing_remote_before_git_mutation(tmp_path: Path) -> None:
@@ -108,6 +132,33 @@ def test_publisher_refuses_foreign_existing_remote_before_git_mutation(tmp_path:
         publisher.prepare(tmp_path, expected_name="vgtu-2024-intelligent-systems", visibility=None)
 
     assert not any(command[:2] == ("git", "add") for command in runner.calls)
+
+
+def test_publisher_preserves_an_existing_https_remote_transport(tmp_path: Path) -> None:
+    remote = "https://github.com/maria/vgtu-2024-intelligent-systems.git"
+    details = '{"nameWithOwner":"maria/vgtu-2024-intelligent-systems","isFork":false,"viewerPermission":"ADMIN","visibility":"PUBLIC"}'
+    runner = FakeRunner(
+        {
+            ("git", "rev-parse", "--is-inside-work-tree"): [(0, "true\n", ""), (0, "true\n", "")],
+            ("git", "branch", "--show-current"): [(0, "main\n", ""), (0, "main\n", "")],
+            ("gh", "auth", "status", "--hostname", "github.com"): [(0, "", ""), (0, "", "")],
+            ("gh", "api", "user", "--jq", ".login"): [(0, "maria\n", ""), (0, "maria\n", "")],
+            ("git", "status", "--porcelain=v1"): [(0, "", ""), (0, "", "")],
+            ("git", "remote", "get-url", "origin"): [(0, remote + "\n", ""), (0, remote + "\n", "")],
+            ("gh", "repo", "view", "maria/vgtu-2024-intelligent-systems", "--json", "nameWithOwner,isFork,viewerPermission,visibility"): [(0, details, ""), (0, details, "")],
+            ("git", "rev-parse", "HEAD"): [(0, "abc123\n", "")],
+            ("git", "push", "origin", "HEAD:refs/heads/main"): [(0, "", "")],
+        }
+    )
+    publisher = GitHubCliPublisher(runner=runner)
+
+    plan = publisher.prepare(tmp_path, expected_name="vgtu-2024-intelligent-systems", visibility=None)
+    result = publisher.publish(plan)
+
+    assert plan.git_transport == "https"
+    assert result.commit_sha == "abc123"
+    assert not any(command[:3] == ("gh", "config", "get") for command in runner.calls)
+    assert not any(command[:3] == ("git", "remote", "set-url") for command in runner.calls)
 
 
 def test_publisher_renames_owned_remote_only_in_the_approved_publish_step(tmp_path: Path) -> None:
@@ -156,17 +207,76 @@ def test_publisher_refuses_to_commit_when_worktree_changes_after_final_review(tm
     assert not any(command[:2] == ("git", "add") for command in runner.calls)
 
 
+def test_publisher_accepts_a_remote_branch_that_arrived_despite_push_error(tmp_path: Path) -> None:
+    responses = _new_repository_responses(status=[(0, "", ""), (0, "", "")])
+    responses[("git", "push", "origin", "HEAD:refs/heads/main")] = [
+        (1, "", "fatal: the remote end hung up unexpectedly")
+    ]
+    responses[("git", "ls-remote", "origin", "refs/heads/main")] = [
+        (0, "abc123\trefs/heads/main\n", "")
+    ]
+    runner = FakeRunner(responses)
+    publisher = GitHubCliPublisher(runner=runner)
+
+    plan = publisher.prepare(tmp_path, expected_name="vgtu-2024-intelligent-systems", visibility="public")
+    result = publisher.publish(plan)
+
+    assert result.commit_sha == "abc123"
+    assert ("git", "ls-remote", "origin", "refs/heads/main") in runner.calls
+
+
+def test_publisher_offers_explicit_ssh_retry_only_for_authenticated_https_transport_failure(
+    tmp_path: Path,
+) -> None:
+    responses = _new_repository_responses(status=[(0, "", ""), (0, "", "")])
+    responses[("git", "push", "origin", "HEAD:refs/heads/main")] = [
+        (1, "", "error: RPC failed; HTTP 400\nsend-pack: unexpected disconnect"),
+        (0, "", ""),
+    ]
+    responses[("git", "ls-remote", "origin", "refs/heads/main")] = [(0, "", "")]
+    responses[("ssh", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", "-T", "git@github.com")] = [
+        (1, "", "Hi maria! You've successfully authenticated, but GitHub does not provide shell access.")
+    ]
+    responses[("git", "remote", "set-url", "origin", "git@github.com:maria/vgtu-2024-intelligent-systems.git")] = [
+        (0, "", "")
+    ]
+    runner = FakeRunner(responses)
+    publisher = GitHubCliPublisher(runner=runner)
+
+    plan = publisher.prepare(tmp_path, expected_name="vgtu-2024-intelligent-systems", visibility="public")
+    with pytest.raises(PublicationPushError) as captured:
+        publisher.publish(plan)
+
+    error = captured.value
+    assert error.ssh_retry_available is True
+    result = publisher.retry_push_with_ssh(error)
+
+    assert result.commit_sha == "abc123"
+    assert (
+        "git",
+        "remote",
+        "set-url",
+        "origin",
+        "git@github.com:maria/vgtu-2024-intelligent-systems.git",
+    ) in runner.calls
+
+
 def _new_repository_responses(*, status: list[tuple[int, str, str]]) -> dict[tuple[str, ...], list[tuple[int, str, str]]]:
     return {
         ("git", "rev-parse", "--is-inside-work-tree"): [(0, "true\n", ""), (0, "true\n", "")],
         ("git", "branch", "--show-current"): [(0, "main\n", ""), (0, "main\n", "")],
         ("gh", "auth", "status", "--hostname", "github.com"): [(0, "", ""), (0, "", "")],
         ("gh", "api", "user", "--jq", ".login"): [(0, "maria\n", ""), (0, "maria\n", "")],
+        ("gh", "config", "get", "git_protocol", "--host", "github.com"): [
+            (0, "https\n", ""),
+            (0, "https\n", ""),
+        ],
         ("git", "status", "--porcelain=v1"): status,
         ("git", "remote", "get-url", "origin"): [(2, "", "no such remote"), (2, "", "no such remote")],
         ("git", "add", "-A"): [(0, "", "")],
         ("git", "commit", "-m", "Prepare repository for publication"): [(0, "", "")],
         ("git", "rev-parse", "HEAD"): [(0, "abc123\n", "")],
+        ("git", "remote", "set-url", "origin", "https://github.com/maria/vgtu-2024-intelligent-systems.git"): [(0, "", "")],
         ("git", "push", "origin", "HEAD:refs/heads/main"): [(0, "", "")],
     }
 

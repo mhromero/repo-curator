@@ -79,7 +79,7 @@ The worker may reason and edit, but the human controls factual claims, risky cha
 
 11. FINAL GITHUB REVIEW AND PUBLICATION
     The guided CLI verifies authenticated GitHub access, renders the target,
-    visibility, branch, validation outcome, and reviewed Git changes, then asks
+    visibility, branch, Git transport, validation outcome, and reviewed Git changes, then asks
     for explicit approval. It commits reviewed changes and performs a normal
     non-force push only after approval. When an authenticated personal `origin`
     has the old local name, the review also shows the exact remote rename before
@@ -87,6 +87,13 @@ The worker may reason and edit, but the human controls factual claims, risky cha
     `main` branch initialization and exact initial-commit files; Git is not
     initialized until approval. A worker-supplied factual GitHub description is
     also shown exactly and applied only after approval.
+
+    Existing remotes retain their configured transport. A new GitHub repository
+    uses the authenticated GitHub CLI `git_protocol` preference. If an approved
+    HTTPS push fails with a transport-style error, Repo Curator checks the remote
+    branch for the reviewed commit. If the commit is absent and SSH authentication
+    is available, the guided CLI may perform one separately confirmed SSH retry to
+    the same repository and branch.
 
     A final-review decline with requested changes returns to `EDITING` and resumes
     the existing Codex context. A decline without requested changes remains at

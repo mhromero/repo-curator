@@ -171,6 +171,7 @@ class CodexCliWorker:
             "exec",
             "--ignore-user-config",
             "--ignore-rules",
+            "--skip-git-repo-check",
             "--json",
             "--output-schema",
             str(schema_path),

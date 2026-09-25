@@ -115,9 +115,25 @@ approval may initialize it. After approval it may commit all reviewed local chan
 and use a normal non-force push. An authenticated personal
 remote rename is allowed only when its exact before/after identity is shown in
 final review; a worker-proposed factual repository description is likewise shown
-exactly and applied only after approval. Forks, retargeting, and
+exactly and applied only after approval. Existing remotes retain their HTTPS or
+SSH transport; a newly created remote uses the authenticated GitHub CLI
+`git_protocol` preference. After a transport-style HTTPS push failure, the
+adapter checks whether the reviewed branch arrived and, when local SSH
+authentication is available, exposes an explicit same-target SSH retry to the
+guided CLI. Forks, retargeting, and
 foreign/organization-owned remotes are refused. `FINISHED`
 requires the adapter to record a successful push, not merely the approval.
+
+### 8. Evaluation export
+
+`repo-curator evaluation export` projects a persisted run into a small,
+version-controlled evaluation result without copying the richer run record. It
+retains structured choices/probabilities, executed route, aggregate intervention
+outcomes, transition timing, available usage, validation/publication outcomes,
+and escalation decisions. It excludes repository and remote identity, source and
+README content, paths and file names, fact values, notes, worker reports/errors,
+and Codex history. A human completes qualitative judgments separately; comparison
+is side-by-side and does not calculate a score or alter execution policy.
 
 ## Why no LangGraph in v1?
 

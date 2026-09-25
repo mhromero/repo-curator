@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import subprocess
 from typing import Annotated, Any
@@ -7,7 +8,20 @@ from typing import Annotated, Any
 import typer
 
 from .codex_worker import CodexCliWorker
-from .publication import GitHubCliPublisher, PublicationError, PublicationInputRequired
+from .evaluation import (
+    EvaluationError,
+    comparison_rows,
+    export_evaluation_result,
+    load_evaluation_case,
+    load_evaluation_result,
+    write_evaluation_result,
+)
+from .publication import (
+    GitHubCliPublisher,
+    PublicationError,
+    PublicationInputRequired,
+    PublicationPushError,
+)
 from .run_store import RunStore
 from .routing import RoutingConfig, RoutingError, migrate_legacy_provider_model
 from .scanner import scan_repository
@@ -82,12 +96,17 @@ edit_app = typer.Typer(no_args_is_help=True, help="Manage edit review.")
 validation_app = typer.Typer(no_args_is_help=True, help="Run deterministic validation.")
 approval_app = typer.Typer(no_args_is_help=True, help="Resolve R2 approval requests.")
 final_app = typer.Typer(no_args_is_help=True, help="Record the final GitHub review.")
+evaluation_app = typer.Typer(
+    no_args_is_help=True,
+    help="Export sanitized evidence from real runs for qualitative evaluation.",
+)
 run_app.add_typer(inspection_app, name="inspection")
 run_app.add_typer(edit_app, name="edit")
 run_app.add_typer(validation_app, name="validation")
 run_app.add_typer(approval_app, name="approval")
 run_app.add_typer(final_app, name="final")
 app.add_typer(run_app, name="run")
+app.add_typer(evaluation_app, name="evaluation")
 
 
 @app.callback()
@@ -227,6 +246,55 @@ StateRootOption = Annotated[
         help="Directory containing run records; defaults to ~/.repo-curator/runs.",
     ),
 ]
+
+
+@evaluation_app.command("export")
+def evaluation_export(
+    run_id: str = typer.Argument(..., help="Persisted run identifier to sanitize."),
+    case_file: Path = typer.Argument(..., help="Sanitized evaluation-case JSON file."),
+    output_file: Path = typer.Argument(..., help="Destination evaluation-result JSON file."),
+    state_root: StateRootOption = None,
+    overwrite: bool = typer.Option(False, "--overwrite", help="Replace an existing result file."),
+) -> None:
+    """Project a run into a publishable result without copying repository content."""
+    try:
+        run = RunStore(state_root).load(run_id)
+        case = load_evaluation_case(case_file)
+        saved = write_evaluation_result(
+            export_evaluation_result(run, case), output_file, overwrite=overwrite
+        )
+    except (EvaluationError, WorkflowError) as error:
+        _workflow_error_and_exit(error)
+    typer.echo(f"Sanitized evaluation result: {saved}")
+    typer.echo("Review and complete the human evaluation fields before sharing the result.")
+
+
+@evaluation_app.command("compare")
+def evaluation_compare(
+    result_files: list[Path] = typer.Argument(..., help="Two or more sanitized evaluation results."),
+    json_output: bool = typer.Option(False, "--json", help="Print comparable observations as JSON."),
+) -> None:
+    """Show comparable observations without calculating a quality score."""
+    if len(result_files) < 2:
+        raise typer.BadParameter("Provide at least two evaluation result files.", param_hint="RESULT_FILES")
+    try:
+        rows = comparison_rows([load_evaluation_result(path) for path in result_files])
+    except EvaluationError as error:
+        _workflow_error_and_exit(error)
+    if json_output:
+        typer.echo(json.dumps({"results": [row.model_dump(mode="json") for row in rows]}, indent=2))
+        return
+    for row in rows:
+        typer.echo(f"Case: {row.case_id}")
+        typer.echo(f"  Run: {row.source_run_id}")
+        typer.echo(f"  Route: {row.model_family or 'unrouted'} / {row.reasoning_effort or 'n/a'}")
+        typer.echo(f"  Final state: {row.final_state}")
+        typer.echo(f"  Validation: {row.verification_status or 'not run'}")
+        typer.echo(f"  Published: {'yes' if row.publication_completed else 'no'}")
+        typer.echo(f"  Run duration (s): {row.run_duration_seconds if row.run_duration_seconds is not None else 'n/a'}")
+        typer.echo(f"  Worker tokens: input={row.worker_input_tokens or 'n/a'}, output={row.worker_output_tokens or 'n/a'}")
+        typer.echo(f"  Human interventions: {row.human_interventions.value}")
+        typer.echo(f"  Preservation: {row.preservation.value}")
 
 
 @run_app.command("_guided", hidden=True)
@@ -1060,7 +1128,26 @@ def _review_and_publish(store: RunStore, run, publisher: GitHubCliPublisher, pla
         typer.echo("Final approval recorded. Publishing the reviewed repository...")
     else:
         typer.echo("Final approval was already recorded. Retrying publication without changing the review decision.")
-    _execute_publication(store, run, publisher)
+    try:
+        _execute_publication(store, run, publisher)
+    except PublicationPushError as error:
+        typer.echo("GitHub did not confirm the push.")
+        typer.echo(f"Push detail: {error.detail}")
+        if error.ssh_retry_available:
+            typer.echo(
+                "SSH authentication is available for GitHub. This retry keeps the same "
+                "GitHub repository and branch, and changes only this local origin URL."
+            )
+            if typer.confirm("Retry this approved push over SSH?", default=True):
+                result = publisher.retry_push_with_ssh(error)
+                finish_publication(run, result)
+                store.save(run)
+                typer.echo(f"Published {result.repository} branch {result.branch} at {result.commit_sha}.")
+                typer.echo("State: FINISHED")
+                return False
+        typer.echo("The publication remains ready to retry; no workflow state was completed.")
+        typer.echo(f"State: {run.state.value}")
+        return False
     result = run.publication_result
     assert result is not None
     typer.echo(f"Published {result.repository} branch {result.branch} at {result.commit_sha}.")
@@ -1324,6 +1411,7 @@ def _print_final_review(run, plan) -> None:
     typer.echo(f"GitHub description: {plan.description or '(leave empty)'}")
     typer.echo(f"Visibility: {plan.visibility}")
     typer.echo(f"Branch to push: {plan.branch}")
+    typer.echo(f"Git transport: {plan.git_transport.upper()}")
     if plan.initialize_repository:
         typer.echo(f'Local Git: initialize a new repository on branch "{plan.branch}"')
     typer.echo(
