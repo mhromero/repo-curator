@@ -257,8 +257,8 @@ When worker evidence supports it, final review may include one concise factual
 GitHub repository description. Repo Curator formats it as
 `Kind for English Class Name @ UNI (Year)`: the worker selects a constrained kind
 (`assignments`, `coursework`, `project`, or `labs`), while the human confirms the
-English class name and repository naming supplies the university abbreviation and
-year. The exact text must be shown before
+English class name and year, and repository naming supplies the university
+abbreviation. The exact text must be shown before
 approval and may be applied only after approval. Repo Curator does not infer or
 manage topics or website metadata.
 

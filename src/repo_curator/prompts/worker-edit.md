@@ -40,7 +40,7 @@ concerns, and any new approval request. Choose `github_description_kind` only
 when repository evidence supports one of `assignments`, `coursework`, `project`,
 or `labs`;
 otherwise use `null`. The controller renders the final GitHub About description
-from that kind, the human-confirmed English class name, and the repository year,
+from that kind and the human-confirmed English class name and year,
 so do not provide free-form marketing, unverified results, or authorship claims.
 Do not declare the repository finished.
 

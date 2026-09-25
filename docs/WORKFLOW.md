@@ -72,7 +72,7 @@ The worker may reason and edit, but the human controls factual claims, risky cha
 
    Implemented after edit approval in `repo-curator run <path>` or
    `repo-curator run validation execute <run-id>`. It asks for a human-confirmed
-   repository name in the R1 `uni-year-class` format before validating. If the
+   repository name in the R1 `uni-class` format before validating. If the
    current directory already has a valid name, the human can explicitly retain it
    without a rename; Repo Curator never invents the values. If that name differs
    from the local directory, the guided
@@ -98,7 +98,7 @@ The worker may reason and edit, but the human controls factual claims, risky cha
     `main` branch initialization and exact initial-commit files; Git is not
     initialized until approval. Before that review, the guided CLI collects the
     exact English class name for the GitHub About description. It combines that
-    human-confirmed name and the repository university/year with a constrained
+    human-confirmed name and year and the repository university with a constrained
     worker-selected kind (`assignments`, `coursework`, `project`, or `labs`),
     then shows the resulting description exactly before approval.
 

@@ -67,7 +67,7 @@ from .workflow import (
     request_inspection_changes,
     request_repository_naming_confirmation,
     request_repository_rename_approval,
-    request_github_description_class_name,
+    request_github_description_details,
     request_github_visibility,
     retry_validation,
     retained_validation_artifact_paths,
@@ -756,7 +756,7 @@ def final_request_changes(
     repository_name: str | None = typer.Option(
         None,
         "--repository-name",
-        help="Optional replacement R1 repository name in uni-year-class format.",
+        help="Optional replacement R1 repository name in uni-class format.",
     ),
     state_root: StateRootOption = None,
 ) -> None:
@@ -765,7 +765,7 @@ def final_request_changes(
     try:
         if repository_name is not None:
             if not repository_name_is_valid(repository_name):
-                raise WorkflowError("Repository name must follow the `uni-year-class` convention.")
+                raise WorkflowError("Repository name must follow the `uni-class` convention.")
             record_fact(run, "repository_naming", repository_name)
         request_final_review_changes(run, notes)
         store.save(run)
@@ -950,6 +950,7 @@ def _prepare_publication(run, publisher: GitHubCliPublisher):
         naming.value,
         _github_description_kind(run).value,
         _github_description_class_name(run),
+        _github_description_year(run),
     )
     return publisher.prepare(
         Path(run.repository_profile.identity.path),
@@ -969,6 +970,13 @@ def _github_description_class_name(run) -> str:
     fact = run.human_facts.get("github_description_class_name")
     if fact is None:
         raise WorkflowError("Final publication requires a human-confirmed English class name.")
+    return fact.value
+
+
+def _github_description_year(run) -> str:
+    fact = run.human_facts.get("github_description_year")
+    if fact is None:
+        raise WorkflowError("Final publication requires a human-confirmed year.")
     return fact.value
 
 
@@ -1086,7 +1094,7 @@ def _drive_guided_workflow(
         if run.state == WorkflowState.READY_FOR_FINAL_REVIEW:
             if _retire_resolved_local_naming_concerns(run):
                 store.save(run)
-            if request_github_description_class_name(run):
+            if request_github_description_details(run):
                 store.save(run)
                 continue
             publisher = GitHubCliPublisher(gh_bin=gh_bin)
@@ -1298,7 +1306,7 @@ def _prompt_disambiguated_repository_name(run) -> str | None:
     if not value:
         return None
     if not repository_name_is_valid(value):
-        typer.echo("Repository name must follow the `uni-year-class` convention.", err=True)
+        typer.echo("Repository name must follow the `uni-class` convention.", err=True)
         return _prompt_disambiguated_repository_name(run)
     if current is not None and value == current.value:
         return None
@@ -1805,16 +1813,16 @@ def _prompt_repository_naming(current_name: str) -> str:
     if repository_name_is_valid(current_name):
         _print_report_heading("Repository naming")
         typer.echo(f"Current local directory: {current_name}")
-        typer.echo("It already follows the required `uni-year-class` convention.")
+        typer.echo("It already follows the required `uni-class` convention.")
         if typer.confirm("Use this name without renaming the local directory?", default=True):
             return current_name
     while True:
         value = typer.prompt(
-            "Enter the intended repository name using the `uni-year-class` convention"
+            "Enter the intended repository name using the `uni-class` convention"
         ).strip()
         if repository_name_is_valid(value):
             return value
-        typer.echo("Repository name must follow the `uni-year-class` convention.", err=True)
+        typer.echo("Repository name must follow the `uni-class` convention.", err=True)
 
 
 def _print_pending_input(run) -> None:

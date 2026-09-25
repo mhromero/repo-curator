@@ -678,7 +678,7 @@ def test_guided_run_completes_approved_edit_and_resumes_by_repository_path(
             "--codex-bin",
             str(executable),
         ],
-        input="B\ny\ny\ny\ny\ny\nNatural Language Processing\ny\nn\n\n",
+        input="B\ny\ny\ny\ny\ny\nNatural Language Processing\n2026\ny\nn\n\n",
     )
 
     run = RunStore(state_root).latest_active_for_repository(repository)
@@ -753,7 +753,7 @@ def test_guided_run_renames_local_repository_only_after_explicit_approval(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    repository = tmp_path / "old-course-folder"
+    repository = tmp_path / "old_course_folder"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
     scan_result = scan_repository(repository)
@@ -776,19 +776,19 @@ def test_guided_run_renames_local_repository_only_after_explicit_approval(
             "--codex-bin",
             str(executable),
         ],
-        input="B\ny\ny\ny\nuni-2026-class\ny\ny\nNatural Language Processing\ny\nn\n\n",
+        input="B\ny\ny\ny\nuni-class\ny\ny\nNatural Language Processing\n2026\ny\nn\n\n",
     )
 
-    renamed_repository = tmp_path / "uni-2026-class"
+    renamed_repository = tmp_path / "uni-class"
     run = RunStore(state_root).latest_active_for_repository(renamed_repository)
     assert result.exit_code == 0
-    assert "Enter the intended repository name using the `uni-year-class` convention" in result.stdout
-    assert 'Rename the local directory to "uni-2026-class"?' in result.stdout
-    assert "Current local directory: old-course-folder" in result.stdout
-    assert "Required name: uni-2026-class" in result.stdout
+    assert "Enter the intended repository name using the `uni-class` convention" in result.stdout
+    assert 'Rename the local directory to "uni-class"?' in result.stdout
+    assert "Current local directory: old_course_folder" in result.stdout
+    assert "Required name: uni-class" in result.stdout
     assert "This changes only the local directory; no remote repository will be renamed." in result.stdout
     assert "Approval required" not in result.stdout
-    assert 'Local repository renamed to "uni-2026-class". No remote was changed.' in result.stdout
+    assert 'Local repository renamed to "uni-class". No remote was changed.' in result.stdout
     assert not repository.exists()
     assert renamed_repository.is_dir()
     assert run is not None
@@ -828,7 +828,7 @@ def test_guided_blocked_naming_mismatch_offers_direct_rename_without_retry_promp
     result = runner.invoke(
         app,
         ["run", str(repository), "--state-root", str(state_root)],
-        input="y\nNatural Language Processing\ny\nn\n\n",
+        input="y\nNatural Language Processing\n2026\ny\nn\n\n",
     )
 
     renamed_repository = tmp_path / "vgtu-2024-intelligent-systems"
@@ -907,7 +907,7 @@ def test_guided_final_review_collects_visibility_then_publishes_after_explicit_a
     result = runner.invoke(
         app,
         ["run", str(repository), "--state-root", str(state_root)],
-        input="Natural Language Processing\ny\npublic\ny\ny\n",
+        input="Natural Language Processing\n2026\ny\npublic\ny\ny\n",
     )
 
     saved_run = RunStore(state_root).load(run.id)
@@ -994,7 +994,7 @@ def test_guided_final_review_offers_approved_ssh_retry_after_https_transport_fai
     result = CliRunner().invoke(
         app,
         ["run", str(repository), "--state-root", str(state_root)],
-        input="Natural Language Processing\ny\npublic\ny\ny\ny\n",
+        input="Natural Language Processing\n2026\ny\npublic\ny\ny\ny\n",
     )
 
     saved_run = RunStore(state_root).load(run.id)
@@ -1077,7 +1077,7 @@ def test_guided_validation_continues_directly_to_final_publication_review(
     result = CliRunner().invoke(
         app,
         ["run", str(repository), "--state-root", str(state_root)],
-        input="Natural Language Processing\ny\npublic\ny\ny\n",
+        input="Natural Language Processing\n2026\ny\npublic\ny\ny\n",
     )
 
     assert result.exit_code == 0
@@ -1164,7 +1164,7 @@ def test_guided_run_renders_r2_approval_before_editing(tmp_path: Path, monkeypat
             "--codex-bin",
             str(executable),
         ],
-        input="B\ny\ny\ny\ny\ny\ny\nNatural Language Processing\ny\nn\n\n",
+        input="B\ny\ny\ny\ny\ny\ny\nNatural Language Processing\n2026\ny\nn\n\n",
     )
 
     assert result.exit_code == 0
@@ -1217,7 +1217,7 @@ def test_guided_r2_rejection_enters_editing_without_representing_the_plan(tmp_pa
             "--codex-bin",
             str(executable),
         ],
-        input="B\ny\ny\nn\nKeep the existing import paths.\ny\ny\ny\nNatural Language Processing\ny\nn\n\n",
+        input="B\ny\ny\nn\nKeep the existing import paths.\ny\ny\ny\nNatural Language Processing\n2026\ny\nn\n\n",
     )
 
     assert result.exit_code == 0
@@ -1262,7 +1262,7 @@ def test_guided_edit_rejection_requests_a_revision_in_the_same_worker_context(
             "--codex-bin",
             str(executable),
         ],
-        input="B\ny\ny\nn\nKeep the existing README heading.\ny\ny\ny\nNatural Language Processing\ny\nn\n\n",
+        input="B\ny\ny\nn\nKeep the existing README heading.\ny\ny\ny\nNatural Language Processing\n2026\ny\nn\n\n",
     )
 
     run = RunStore(state_root).latest_active_for_repository(repository)

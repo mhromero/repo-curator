@@ -33,15 +33,15 @@ def test_validation_verifies_applicable_static_and_python_checks(tmp_path: Path)
 
 
 def test_repository_name_allows_a_hyphenated_class_slug() -> None:
-    assert repository_name_is_valid("vgtu-2024-intelligent-systems")
-    assert repository_name_is_valid("VGTU-2024-Intelligent-Systems")
-    assert not repository_name_is_valid("vgtu-24-intelligent-systems")
+    assert repository_name_is_valid("vgtu-intelligent-systems")
+    assert repository_name_is_valid("VGTU-Intelligent-Systems")
+    assert not repository_name_is_valid("vgtu")
 
 
 def test_repository_name_candidates_are_extracted_without_interpreting_other_feedback() -> None:
     assert extract_repository_name_candidates(
-        "Rename the repository to vgtu-2024-intelligent-systems."
-    ) == ["vgtu-2024-intelligent-systems"]
+        "Rename the repository to vgtu-intelligent-systems."
+    ) == ["vgtu-intelligent-systems"]
     assert extract_repository_name_candidates("Rename Data1.txt first.") == []
 
 

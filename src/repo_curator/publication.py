@@ -24,12 +24,17 @@ _DESCRIPTION_LABELS = {
 }
 
 
-def format_github_description(repository_name: str, kind: str, class_name: str) -> str:
-    """Build the concise About text from a confirmed ``uni-year-class`` name."""
-    university, year, *class_parts = repository_name.split("-")
-    if not university or not year.isdigit() or not class_parts:
+def format_github_description(
+    repository_name: str,
+    kind: str,
+    class_name: str,
+    year: str,
+) -> str:
+    """Build the concise About text from a confirmed ``uni-class`` name."""
+    university, *class_parts = repository_name.split("-")
+    if not university or not class_parts:
         raise PublicationError(
-            "GitHub description requires a confirmed repository name in `uni-year-class` format."
+            "GitHub description requires a confirmed repository name in `uni-class` format."
         )
     label = _DESCRIPTION_LABELS.get(kind)
     if label is None:
@@ -37,7 +42,10 @@ def format_github_description(repository_name: str, kind: str, class_name: str) 
     course = class_name.strip()
     if not course:
         raise PublicationError("GitHub description requires a human-confirmed English class name.")
-    return f"{label} for {course} @ {university.upper()} ({year})"
+    normalized_year = year.strip()
+    if not normalized_year.isdigit() or len(normalized_year) != 4:
+        raise PublicationError("GitHub description requires a human-confirmed four-digit year.")
+    return f"{label} for {course} @ {university.upper()} ({normalized_year})"
 
 
 class PublicationInputRequired(PublicationError):

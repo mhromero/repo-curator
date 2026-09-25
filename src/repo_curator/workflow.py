@@ -297,12 +297,16 @@ TRIAGE_FACT_PROMPTS = {
     "intended_execution": "Clarify the intended execution and validation expectations.",
     "repository_naming": (
         "Confirm the current local directory name or provide the intended name using the required "
-        "`uni-year-class` convention. Repo Curator can rename the local directory only after your "
+        "`uni-class` convention. Repo Curator can rename the local directory only after your "
         "approval; it never changes a remote repository."
     ),
     "github_description_class_name": (
         "Enter the exact English class name for the GitHub About description "
         "(for example, `Natural Language Processing`)."
+    ),
+    "github_description_year": (
+        "Enter the exact year for the GitHub About description "
+        "(for example, `2026`)."
     ),
     "github_visibility": "Choose visibility for the new GitHub repository: public or private.",
 }
@@ -780,19 +784,25 @@ def request_github_visibility(run: RepositoryRun) -> bool:
     return True
 
 
-def request_github_description_class_name(run: RepositoryRun) -> bool:
-    """Collect the human-confirmed English course title used in GitHub About text."""
+def request_github_description_details(run: RepositoryRun) -> bool:
+    """Collect the human-confirmed title and year used in GitHub About text."""
     _require_state(run, WorkflowState.READY_FOR_FINAL_REVIEW)
-    if "github_description_class_name" in run.human_facts:
+    missing_keys = [
+        key
+        for key in ("github_description_class_name", "github_description_year")
+        if key not in run.human_facts
+    ]
+    if not missing_keys:
         return False
     _add_pending_fact_requests(
         run,
         [
             FactRequest(
-                key="github_description_class_name",
-                prompt=TRIAGE_FACT_PROMPTS["github_description_class_name"],
+                key=key,
+                prompt=TRIAGE_FACT_PROMPTS[key],
                 source="publication",
             )
+            for key in missing_keys
         ],
     )
     _wait_for_input_if_needed(run, WorkflowState.READY_FOR_FINAL_REVIEW)
@@ -856,7 +866,7 @@ def _repository_rename_request(target_name: str) -> ApprovalRequest:
     return ApprovalRequest(
         problem="The human-confirmed repository name does not match the local directory.",
         proposed_change=f'Rename the local repository directory to "{target_name}".',
-        reason="The R1 naming convention requires the confirmed `uni-year-class` name.",
+        reason="The R1 naming convention requires the confirmed `uni-class` name.",
         behavior_impact=(
             "Moves only this local repository directory. It does not edit repository files, "
             "Git history, Git configuration, or any remote repository."

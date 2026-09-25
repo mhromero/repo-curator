@@ -21,10 +21,10 @@ from .workflow import (
 PYTEST_TIMEOUT_SECONDS = 60
 MAX_PYTHON_SOURCE_BYTES = 1_000_000
 # The class component is a slug and may itself contain hyphens, e.g.
-# ``vgtu-2024-intelligent-systems``.
-REPOSITORY_NAMING_PATTERN = re.compile(r"^[A-Za-z0-9]+-[0-9]{4}-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$")
+# ``ucm-procesamiento-lenguaje-natural``.
+REPOSITORY_NAMING_PATTERN = re.compile(r"^[A-Za-z0-9]+-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$")
 REPOSITORY_NAMING_CANDIDATE_PATTERN = re.compile(
-    r"(?<![A-Za-z0-9-])([A-Za-z0-9]+-[0-9]{4}-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)(?![A-Za-z0-9-])"
+    r"(?<![A-Za-z0-9-])([A-Za-z0-9]+-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)(?![A-Za-z0-9-])"
 )
 
 
@@ -98,7 +98,7 @@ def _repository_naming_check(current_name: str, confirmed_name: str) -> Validati
             status=ValidationCheckStatus.FAILED,
             detail=(
                 f'Human-confirmed name "{normalized}" does not follow the required '
-                "`uni-year-class` convention."
+                "`uni-class` convention."
             ),
         )
     if normalized == current_name:
@@ -107,7 +107,7 @@ def _repository_naming_check(current_name: str, confirmed_name: str) -> Validati
             status=ValidationCheckStatus.PASSED,
             detail=(
                 f'Human-confirmed name matches the current directory name "{current_name}" '
-                "and the required `uni-year-class` convention."
+                "and the required `uni-class` convention."
             ),
         )
     return ValidationCheck(

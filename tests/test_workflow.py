@@ -43,7 +43,7 @@ from repo_curator.workflow import (
     record_validation_artifact_decision,
     record_validation_report,
     request_final_review_changes,
-    request_github_description_class_name,
+    request_github_description_details,
     request_repository_naming_confirmation,
     request_repository_rename_approval,
     retry_validation,
@@ -297,20 +297,25 @@ def test_validation_requires_human_naming_confirmation_and_records_outcome(tmp_p
     assert run.validation_report is not None
 
 
-def test_final_review_requires_a_human_confirmed_english_class_name(tmp_path: Path) -> None:
+def test_final_review_requires_human_confirmed_english_class_name_and_year(tmp_path: Path) -> None:
     profile, triage_result = _scan_and_triage(tmp_path)
     run = _triaged_run(profile, triage_result)
     run.state = WorkflowState.READY_FOR_FINAL_REVIEW
 
-    assert request_github_description_class_name(run) is True
+    assert request_github_description_details(run) is True
     assert run.state == WorkflowState.WAITING_FOR_INPUT
     assert run.resume_state == WorkflowState.READY_FOR_FINAL_REVIEW
-    assert run.pending_fact_requests[0].key == "github_description_class_name"
+    assert [request.key for request in run.pending_fact_requests] == [
+        "github_description_class_name",
+        "github_description_year",
+    ]
 
     record_fact(run, "github_description_class_name", "Natural Language Processing")
+    record_fact(run, "github_description_year", "2026")
 
     assert run.state == WorkflowState.READY_FOR_FINAL_REVIEW
     assert run.human_facts["github_description_class_name"].value == "Natural Language Processing"
+    assert run.human_facts["github_description_year"].value == "2026"
 
 
 def test_validation_local_rename_requires_approval_and_preserves_rejection_note(

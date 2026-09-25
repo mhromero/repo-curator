@@ -98,7 +98,7 @@ The implemented validator rescans repository hygiene, parses Python and notebook
 files without executing them, and runs existing Python tests without installing
 dependencies. It records `VERIFIED`, `PARTIALLY_VERIFIED`, or `BLOCKED`; only the
 first two reach `READY_FOR_FINAL_REVIEW`. It requests the exact human-confirmed
-R1 `uni-year-class` repository name rather than inferring its values, and never
+R1 `uni-class` repository name rather than inferring its values, and never
 renames a remote repository during validation. A mismatch becomes a persisted approval request;
 only an approved deterministic local filesystem move updates the run's saved
 repository path. A declined move is recorded as `BLOCKED` with an optional human
