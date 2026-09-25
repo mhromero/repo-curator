@@ -74,3 +74,7 @@ def test_edit_prompt_renders_the_adaptive_readme_quality_guide() -> None:
     assert "prose and headings in English" in rendered
     assert "intentionally read-only artifact" in rendered
     assert "include the applicable English Academic Context or\nProvenance section" in rendered
+    assert "[Report](reports/final-report.pdf)" in rendered
+    assert "Never expose an absolute local filesystem" in rendered
+    assert "MATLAB Image Processing Toolbox" in rendered
+    assert "not “some functions from the image toolbox”" in rendered

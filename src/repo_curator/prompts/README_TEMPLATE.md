@@ -22,7 +22,12 @@ If the complexity of the repository or the work requires it, specifythe reposito
 
 ### Requirements
 
-State required runtimes/tools.
+State every principal runtime, library, toolbox, framework, dataset, or external
+tool needed for the documented use. Name each requirement concretely when the
+repository evidence identifies it—for example, `MATLAB Image Processing Toolbox`,
+not “some functions from the image toolbox.” Do not invent a dependency when its
+identity cannot be verified; state the limitation or omit execution guidance
+instead.
 
 ### Installation
 
@@ -35,7 +40,10 @@ Provide the intended verified run/build/use command where applicable.
 ## Results
 
 Optional. Include only results supported by repository artifacts or human
-confirmation. If the repository already includes reports, link to them and briefly summarize their contents.
+confirmation. If the repository already includes reports, link to them with a
+clean descriptive relative Markdown link such as `[Report](reports/final-report.pdf)`
+and briefly summarize their contents. Never expose an absolute local filesystem
+path in README prose or link targets.
 
 ## Academic Context
 
