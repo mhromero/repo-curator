@@ -14,9 +14,28 @@ human-confirmed context only. Don't specify the number of labs/folders/files.
 
 List the principal languages, libraries, frameworks, or tools actually used.
 
-## Features and repository structure
+## Coursework contents and structure
 
-If the complexity of the repository or the work requires it, specifythe repository organisation and the main features (concepts, models used, contents...) For small or medium-sized repositories that are self explanatory, ignore this section.
+For a repository containing several assignments, practices, or labs, write this
+as a reader-oriented map rather than a filesystem inventory:
+
+1. Give a brief top-level map only when it helps orient the reader (for example,
+   “`hw/` contains assignments and `lab/` contains guided exercises”).
+2. Add one concise bullet for each meaningful homework assignment or lab, using
+   an evidenced title and a one-line summary of its goal plus the main technique,
+   algorithm, model, or technology employed. Include a specific input/output
+   only when it explains the work.
+3. Group only genuinely small, related exercises when their individual purpose
+   cannot be established from repository evidence.
+
+For example: `- **Homework 2 — Object detection:** implements [evidenced
+technique] in MATLAB using the supplied image set.` Replace bracketed text only
+with verified repository evidence; do not invent an assignment name or method.
+
+Do not recursively list directories, enumerate asset locations, describe a
+folder as “containing files,” or add generic working-directory advice. Mention a
+path only when it helps a reader locate an assignment, report, entry point, or
+required input. Omit this section for a small self-explanatory repository.
 
 ## Getting Started
 

@@ -77,4 +77,8 @@ def test_edit_prompt_renders_the_adaptive_readme_quality_guide() -> None:
     assert "[Report](reports/final-report.pdf)" in rendered
     assert "Never expose an absolute local filesystem" in rendered
     assert "MATLAB Image Processing Toolbox" in rendered
-    assert "not “some functions from the image toolbox”" in rendered
+    assert "some functions from the image toolbox" in rendered
+    assert "reader-oriented map rather than a filesystem inventory" in rendered
+    assert "one concise bullet for each meaningful homework assignment or lab" in rendered
+    assert "algorithm, model, or technology employed." in rendered
+    assert "Do not recursively list directories" in rendered
