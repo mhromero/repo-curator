@@ -257,7 +257,8 @@ The implementation should avoid silently broadening an approved plan.
 
 - required cleanup complete;
 - dependencies represented correctly;
-- README complete for the chosen portfolio depth;
+- README complete in English for the chosen portfolio depth, with original paths,
+  commands, proper names, and verified academic facts preserved;
 - attribution resolved;
 - documented commands validated where practical;
 - tests/checks acceptable for the project;

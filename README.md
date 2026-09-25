@@ -192,7 +192,9 @@ The canonical worker instructions are the packaged Markdown files in
 `src/repo_curator/prompts/`. `CodexCliWorker` renders exactly one structured JSON
 context block into the phase template; the edit phase also embeds the packaged
 README quality guide as adaptable guidance, retaining applicable sections rather
-than enforcing a rigid document shape. It does not load prompts from the target
+than enforcing a rigid document shape. Approved README work produces English
+prose while preserving original paths, commands, proper names, and verified facts.
+It does not load prompts from the target
 repository or ambient Codex configuration. Update an asset and its rendering tests
 when changing worker behavior. Python remains responsible for sandbox selection,
 schemas, workflow transitions, approval gates, and Git/GitHub safeguards.

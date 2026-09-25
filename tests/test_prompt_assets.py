@@ -51,5 +51,8 @@ def test_edit_prompt_renders_the_adaptive_readme_quality_guide() -> None:
     assert "{{ readme_template }}" not in rendered
     assert "--- README quality guide ---" in rendered
     assert "## Getting Started" in rendered
-    assert "Omit a section only\nwhen" in rendered
+    assert "Omit a section only" in rendered
     assert "it is clearly superfluous" in rendered
+    assert "mandatory quality bar" in rendered
+    assert "prose and headings in English" in rendered
+    assert "intentionally read-only artifact" in rendered

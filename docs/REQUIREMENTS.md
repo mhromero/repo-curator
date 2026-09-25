@@ -20,6 +20,9 @@ A finished repository should satisfy the following where applicable:
 - At minimum, a representative import, run, compile, build, or equivalent check is performed when the README claims the project is runnable.
 - README depth is appropriate to the repository's portfolio value.
 - README claims are grounded in repository evidence or human confirmation.
+- README prose and headings are in English for portfolio consistency. Original
+  paths, commands, proper names, and verified academic facts remain unchanged;
+  read-only artifacts state clearly that runtime setup is not required.
 - Academic context and attribution are accurate.
 - Existing licenses and copyright notices are preserved. No license is invented when rights are unclear.
 - The final diff contains only intentional changes and no Repo Curator state or temporary artifacts.
@@ -63,7 +66,8 @@ The workflow may perform clearly safe actions within an approved edit phase, inc
 - Remove allowlisted disposable files such as `.DS_Store`, Python bytecode, common caches, and notebook checkpoints.
 - Remove a committed local virtual environment only after its dependencies have been identified or preserved.
 - Update `.gitignore`.
-- Create or update README content using verified evidence.
+- Create or update an English README using verified evidence and the applicable
+  packaged README quality guide sections.
 - Fix README formatting, spelling, verified commands, and factual project structure.
 - Add dependency metadata when the dependency set is unambiguous and behavior is not changed.
 - Generate appropriate lockfiles.

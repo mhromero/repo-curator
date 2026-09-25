@@ -70,6 +70,13 @@ use should not require knowledge of the internal state machine.
 - Reports should use consistent headings and an empty line between major sections.
   Use light terminal color when supported, without making color necessary to read
   the output.
+- In an approval card, put each field label on its own line. Wrap its value with
+  indentation; render semicolon-delimited proposed operations and affected paths
+  as separate bullets. This is presentation only: structured approval data remains
+  the source of truth.
+- When the guided flow pauses for a required human fact, use a prominent coloured
+  heading, render the question as an indented paragraph, and put the response
+  field on a separate line.
 
 ## Example flow
 

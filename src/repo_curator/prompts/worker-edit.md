@@ -29,12 +29,20 @@ allowed only when non-destructive and relevant to approved work; they are not
 final validation. Do not add Repo Curator state or internal files to the target
 repository.
 
-When an approved edit creates or substantially improves a README, use the
-following template as an adaptive quality guide. Keep every section that is
-applicable to this repository, especially requirements and setup/run instructions
-when a user needs tools, dependencies, or commands to use it. Omit a section only
-when it is clearly superfluous for the repository; do not add placeholder text or
-invent facts merely to fill it. Preserve useful existing README material.
+README work in the approved edit scope has a mandatory quality bar. When the
+approved plan creates or updates a README, complete that work before reporting
+the edit: use the following template as an adaptive baseline, rather than merely
+adding a short summary. Write explanatory README prose and headings in English,
+even when the repository itself is in another language. Preserve paths, commands,
+file names, proper names, and verified academic facts exactly; translate factual
+prose only when its meaning is clear.
+
+Keep every template section that applies. Include requirements and setup/run
+guidance whenever a user needs tools, dependencies, or commands to use the work.
+For an intentionally read-only artifact such as an already-executed notebook,
+state that clearly in English and explain that runtime setup is not required.
+Omit a section only when it is clearly superfluous; do not add placeholder text
+or invent facts merely to fill it. Preserve useful existing README material.
 
 --- README quality guide ---
 

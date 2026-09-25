@@ -14,6 +14,7 @@ from repo_curator.cli import (
     _print_inspection_report,
     _print_final_review,
     _print_approval_request,
+    _prompt_required_fact,
     _prompt_updated_repository_name,
     _review_tracked_junk,
     _retire_resolved_local_naming_concerns,
@@ -84,7 +85,7 @@ def test_approval_request_separates_labeled_sections(capsys) -> None:
     _print_approval_request(
         ApprovalRequest(
             problem="A meaningful artifact may move.",
-            proposed_change="Move the package into src/.",
+            proposed_change="Move the package into src/. ; Rename the entry point.",
             reason="The current layout obscures the package.",
             affected_files=["package/__init__.py"],
             behavior_impact="Existing imports may need updates.",
@@ -92,9 +93,22 @@ def test_approval_request_separates_labeled_sections(capsys) -> None:
     )
 
     output = capsys.readouterr().out
-    assert "Problem: A meaningful artifact may move.\n\nProposed change:" in output
-    assert "Reason: The current layout obscures the package.\n\nAffected files:" in output
-    assert "Expected behavior change: Existing imports may need updates.\n\n" in output
+    assert "Problem:\n  A meaningful artifact may move.\n\nProposed change:" in output
+    assert "  - Move the package into src/.\n  - Rename the entry point." in output
+    assert "Affected files:\n  - package/__init__.py" in output
+    assert "Expected behavior change:\n  Existing imports may need updates.\n\n" in output
+
+
+def test_required_fact_prompt_separates_question_from_response_field(monkeypatch, capsys) -> None:
+    monkeypatch.setattr("repo_curator.cli.typer.prompt", lambda _label: "read-only notebooks")
+
+    assert _prompt_required_fact("missing_input_assets", "Are the assets needed for execution available?") == (
+        "read-only notebooks"
+    )
+
+    output = capsys.readouterr().out
+    assert "Input required — missing_input_assets" in output
+    assert "  Are the assets needed for execution available?" in output
 
 
 def test_blocked_invalid_repository_name_can_confirm_the_current_directory(
@@ -912,7 +926,7 @@ def test_guided_final_review_collects_visibility_then_publishes_after_explicit_a
 
     saved_run = RunStore(state_root).load(run.id)
     assert result.exit_code == 0
-    assert "github_visibility:" in result.stdout
+    assert "Input required — github_visibility" in result.stdout
     assert "Final publication review" in result.stdout
     assert "GitHub repository: maria/uni-class" in result.stdout
     assert "Approve publication to this GitHub repository?" in result.stdout
@@ -1169,8 +1183,8 @@ def test_guided_run_renders_r2_approval_before_editing(tmp_path: Path, monkeypat
 
     assert result.exit_code == 0
     assert "Approval required" in result.stdout
-    assert "Proposed change: Move the package into src/." in result.stdout
-    assert "Expected behavior change: Existing imports may need updates." in result.stdout
+    assert "Proposed change:\n  - Move the package into src/." in result.stdout
+    assert "Expected behavior change:\n  Existing imports may need updates." in result.stdout
     assert "Approved." in result.stdout
     assert "Approve these edits?" in result.stdout
     assert "State: READY_FOR_FINAL_REVIEW" in result.stdout
@@ -1334,7 +1348,8 @@ def test_interactive_run_start_answers_worker_facts_and_resumes_thread(
     )
     stored_run = RunStore(state_root).load(run_id)
     assert result.exit_code == 0
-    assert "Human input is required before the workflow can continue." in result.stdout
+    assert "Human input required" in result.stdout
+    assert "Answer the highlighted prompt before the workflow can continue." in result.stdout
     assert "Resuming read-only Codex thread thread-123" in result.stdout
     assert "Inspection is ready for human review." in result.stdout
     assert stored_run.state.value == "WAITING_INSPECTION_REVIEW"

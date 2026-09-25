@@ -1,11 +1,14 @@
 # Project Name
 
+Write explanatory prose and headings in English. Preserve repository paths,
+commands, proper names, and verified academic facts exactly as evidenced.
+
 Participants: (if more than 1)
 
 ## Overview
 
 Briefly explain what the project does and its scope. Use repository evidence and
-human-confirmed context only.
+human-confirmed context only. Don't specify the number of labs/folders/files.
 
 ## Tech Stack
 

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import shutil
 import subprocess
+import textwrap
 from typing import Annotated, Any
 
 import typer
@@ -1031,7 +1033,7 @@ def _drive_guided_workflow(
     """Advance the normal CLI journey until this milestone's edit-review gate."""
     while True:
         if run.state == WorkflowState.WAITING_FOR_INPUT:
-            typer.echo("Human input is required before the workflow can continue.")
+            _print_human_input_required()
             if not _collect_pending_input(run):
                 typer.echo(f"State: {run.state.value}")
                 return
@@ -1601,18 +1603,59 @@ def _print_report_section(title: str, values: list[str]) -> None:
 def _print_approval_request(request) -> None:
     _print_report_heading("Approval required")
     _print_approval_detail("Problem", request.problem)
-    _print_approval_detail("Proposed change", request.proposed_change)
+    _print_approval_detail("Proposed change", request.proposed_change, operations=True)
     _print_approval_detail("Reason", request.reason)
-    _print_approval_detail(
-        "Affected files",
-        ", ".join(request.affected_files) if request.affected_files else "none identified",
-    )
+    _print_approval_paths(request.affected_files)
     _print_approval_detail("Expected behavior change", request.behavior_impact)
 
 
-def _print_approval_detail(title: str, value: str) -> None:
-    typer.secho(f"{title}:", fg=typer.colors.CYAN, bold=True, nl=False)
-    typer.echo(f" {value}")
+def _print_approval_detail(title: str, value: str, *, operations: bool = False) -> None:
+    typer.secho(f"{title}:", fg=typer.colors.CYAN, bold=True)
+    values = _separate_operations(value) if operations else [value]
+    for item in values:
+        _print_wrapped(item, bullet=operations)
+    typer.echo()
+
+
+def _print_approval_paths(paths: list[str]) -> None:
+    typer.secho("Affected files:", fg=typer.colors.CYAN, bold=True)
+    if paths:
+        for path in paths:
+            _print_wrapped(path, bullet=True)
+    else:
+        typer.echo("  - none identified")
+    typer.echo()
+
+
+def _separate_operations(value: str) -> list[str]:
+    """Use an explicit semicolon as a safe presentation-only operation boundary."""
+    return [item.strip() for item in value.split(";") if item.strip()]
+
+
+def _print_wrapped(value: str, *, bullet: bool = False) -> None:
+    width = max(72, min(100, shutil.get_terminal_size(fallback=(88, 24)).columns))
+    initial_indent = "  - " if bullet else "  "
+    subsequent_indent = "    " if bullet else "  "
+    for paragraph in value.splitlines() or [value]:
+        if not paragraph.strip():
+            typer.echo()
+            continue
+        typer.echo(
+            textwrap.fill(
+                paragraph.strip(),
+                width=width,
+                initial_indent=initial_indent,
+                subsequent_indent=subsequent_indent,
+                break_long_words=False,
+                break_on_hyphens=False,
+            )
+        )
+
+
+def _print_human_input_required() -> None:
+    typer.secho("Human input required", fg=typer.colors.YELLOW, bold=True)
+    typer.secho("─" * 36, fg=typer.colors.YELLOW)
+    typer.echo("Answer the highlighted prompt before the workflow can continue.")
     typer.echo()
 
 
@@ -1674,7 +1717,7 @@ def _drive_interactive_inspection(
 ) -> None:
     while True:
         if run.state == WorkflowState.WAITING_FOR_INPUT:
-            typer.echo("Human input is required before the workflow can continue.")
+            _print_human_input_required()
             if not _collect_pending_input(run):
                 typer.echo(f"State: {run.state.value}")
                 return
@@ -1802,7 +1845,9 @@ def _prompt_portfolio_classification() -> PortfolioClassification:
 
 def _prompt_required_fact(key: str, prompt: str) -> str:
     while True:
-        value = typer.prompt(f"{key}: {prompt}").strip()
+        typer.secho(f"Input required — {key}", fg=typer.colors.YELLOW, bold=True)
+        _print_wrapped(prompt)
+        value = typer.prompt("Your response").strip()
         if value:
             return value
         typer.echo("A response is required. Use 'not applicable' when that is the answer.", err=True)
@@ -1829,9 +1874,10 @@ def _print_pending_input(run) -> None:
     if run.portfolio_classification is None:
         typer.echo("Portfolio classification: pending (choose A, B, or C).")
     if run.pending_fact_requests:
-        typer.echo("Pending human facts:")
+        typer.secho("Pending human facts:", fg=typer.colors.CYAN, bold=True)
         for request in run.pending_fact_requests:
-            typer.echo(f"- {request.key}: {request.prompt}")
+            typer.secho(f"  {request.key}", fg=typer.colors.YELLOW, bold=True)
+            _print_wrapped(request.prompt, bullet=True)
     elif run.portfolio_classification is not None:
         typer.echo("Pending human facts: none")
 
