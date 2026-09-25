@@ -9,6 +9,7 @@ import re
 import subprocess
 from typing import Callable, Protocol
 
+from .signals import find_nonpublishable_disposable_paths
 from .workflow import PublicationResult
 
 
@@ -128,6 +129,7 @@ class GitHubCliPublisher:
         path = repository_path.expanduser().resolve()
         if not path.is_dir():
             raise PublicationError(f"Repository path does not exist: {path}")
+        _assert_publication_hygiene(path)
         if not self._is_git_repository(path):
             return self._prepare_initial_repository(
                 path,
@@ -544,3 +546,14 @@ def _initial_worktree_status(path: Path) -> tuple[str, ...]:
         if candidate.is_file() or candidate.is_symlink():
             files.append(f"?? {candidate.relative_to(path).as_posix()}")
     return tuple(files)
+
+
+def _assert_publication_hygiene(path: Path) -> None:
+    """Reject metadata that must never be reviewed, staged, or published."""
+    if not (path / ".gitignore").is_file():
+        raise PublicationError("Publication requires a reviewed .gitignore file.")
+    blocked = find_nonpublishable_disposable_paths(path)
+    if blocked:
+        raise PublicationError(
+            "Publication refuses disposable metadata: " + ", ".join(f"`{item}`" for item in blocked)
+        )

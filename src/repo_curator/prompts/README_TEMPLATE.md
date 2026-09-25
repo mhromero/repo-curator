@@ -38,6 +38,10 @@ confirmation.
 When applicable, state the course/project context and accurately describe
 collaboration, instructor starter code, or upstream material.
 
+When human-confirmed provenance identifies instructor, starter-code,
+collaborator, or other third-party material, this section is required. Do not
+invent attribution when provenance is unknown.
+
 ## License
 
 Include only when an existing license or confirmed rights make this appropriate.

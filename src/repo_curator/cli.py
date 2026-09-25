@@ -28,6 +28,7 @@ from .publication import (
 from .run_store import RunStore
 from .routing import RoutingConfig, RoutingError, migrate_legacy_provider_model
 from .scanner import scan_repository
+from .signals import must_not_publish_disposable
 from .triage import TriageProviderError, triage_repository, triage_summary
 from .validation import (
     capture_validation_baseline,
@@ -255,6 +256,8 @@ StateRootOption = Annotated[
     ),
 ]
 
+_MINIMAL_GITIGNORE = """# Operating-system metadata\n.DS_Store\nThumbs.db\n\n# Common generated Python and notebook files\n__pycache__/\n*.py[cod]\n.ipynb_checkpoints/\n.venv/\n"""
+
 
 @evaluation_app.command("export")
 def evaluation_export(
@@ -323,6 +326,7 @@ def guided_run(
     try:
         run = store.latest_active_for_repository(path)
         if run is None:
+            prior_completed_run = store.latest_finished_for_repository(path)
             typer.echo("Scanning...")
             scan_result = scan_repository(path)
             typer.echo("✓ Scan complete")
@@ -330,8 +334,11 @@ def guided_run(
             triage_result = triage_summary(scan_result.triage_summary, model=model)
             typer.echo("✓ Triage complete")
             run = start_run(scan_result.repository_profile, triage_result)
+            reused_description_facts = _reuse_github_description_facts(run, prior_completed_run)
             store.create(run)
             typer.echo(f"Run: {run.id}")
+            if reused_description_facts:
+                typer.echo("Reused previously confirmed GitHub About details for this repository.")
             _print_triage_clarifications(run)
         else:
             typer.echo(f"Resuming run for {run.repository_profile.identity.path}.")
@@ -933,6 +940,7 @@ def _execute_validation(store: RunStore, run):
         edit_report=run.edit_report,
         baseline=run.validation_baseline,
         retained_artifact_paths=retained_validation_artifact_paths(run),
+        on_progress=lambda message: typer.echo(f"Validation: {message}"),
     )
     record_validation_report(run, report)
     store.save(run)
@@ -1096,6 +1104,12 @@ def _drive_guided_workflow(
         if run.state == WorkflowState.READY_FOR_FINAL_REVIEW:
             if _retire_resolved_local_naming_concerns(run):
                 store.save(run)
+            if _reuse_github_description_facts(
+                run,
+                store.latest_finished_for_repository(Path(run.repository_profile.identity.path)),
+            ):
+                store.save(run)
+                typer.echo("Reused previously confirmed GitHub About details for this repository.")
             if request_github_description_details(run):
                 store.save(run)
                 continue
@@ -1131,6 +1145,8 @@ def _resolve_blocked_validation(store: RunStore, run) -> bool:
     if _repository_name_needs_rename(run):
         typer.echo("The repository naming issue can be resolved by the local-rename decision below.")
         return _review_repository_rename(store, run)
+    if _review_missing_gitignore(store, run):
+        return True
     if _review_tracked_junk(store, run):
         return True
     note = typer.prompt(
@@ -1149,22 +1165,58 @@ def _resolve_blocked_validation(store: RunStore, run) -> bool:
     return False
 
 
+def _review_missing_gitignore(store: RunStore, run) -> bool:
+    """Offer an explicit, minimal hygiene fix before a repository can publish."""
+    if run.validation_report is None:
+        return False
+    missing = any(
+        check.name == ".gitignore presence" and check.status.value == "failed"
+        for check in run.validation_report.checks
+    )
+    repository_path = Path(run.repository_profile.identity.path)
+    target = repository_path / ".gitignore"
+    if not missing:
+        return False
+    if target.exists():
+        retry_validation(run)
+        store.save(run)
+        return True
+    _print_report_heading("Missing .gitignore")
+    typer.echo("A minimal .gitignore prevents common system and generated files from publication.")
+    _print_wrapped(_MINIMAL_GITIGNORE)
+    if not typer.confirm("Create this minimal .gitignore?", default=True):
+        return False
+    target.write_text(_MINIMAL_GITIGNORE, encoding="utf-8")
+    typer.echo("Created .gitignore. Revalidating...")
+    retry_validation(run)
+    store.save(run)
+    return True
+
+
 def _review_tracked_junk(store: RunStore, run) -> bool:
     """Resolve exact scanner-flagged disposable paths without parsing report text."""
     if run.validation_report is None:
         return False
-    decided_paths = {decision.path for decision in run.validation_artifact_decisions}
+    decisions_by_path = {
+        decision.path: decision.action for decision in run.validation_artifact_decisions
+    }
     flagged_paths = [
         path
         for check in run.validation_report.checks
-        if check.name == "Tracked-junk scan" and check.status.value == "failed"
+        if check.name in {"Tracked-junk scan", "Disposable-file scan"}
+        and check.status.value == "failed"
         for path in check.affected_paths
     ]
-    paths = [
-        path
-        for path in flagged_paths
-        if path not in decided_paths
-    ]
+    # A prior run may have recorded a delete decision just before an interrupted
+    # Git removal. Complete that exact, previously approved removal on resume.
+    for path in flagged_paths:
+        if decisions_by_path.get(path) != ValidationArtifactAction.DELETED:
+            continue
+        deleted = _delete_tracked_artifact(Path(run.repository_profile.identity.path), path)
+        if deleted:
+            typer.echo(f"Completed saved removal: {path}")
+
+    paths = [path for path in flagged_paths if path not in decisions_by_path]
     if not paths:
         if flagged_paths:
             typer.echo("Revalidating...")
@@ -1173,15 +1225,18 @@ def _review_tracked_junk(store: RunStore, run) -> bool:
             return True
         return False
 
-    _print_report_heading("Tracked file decisions")
+    _print_report_heading("Disposable file decisions")
     typer.echo("Choose how to handle each scanner-flagged file.")
     for path in paths:
         action = _prompt_tracked_junk_action(path)
         if action is None:
             return False
         if action == ValidationArtifactAction.DELETED:
-            _delete_tracked_artifact(Path(run.repository_profile.identity.path), path)
-            typer.echo(f"Deleted from the worktree and staged for removal: {path}")
+            deleted = _delete_tracked_artifact(Path(run.repository_profile.identity.path), path)
+            if deleted:
+                typer.echo(f"Deleted from the worktree: {path}")
+            else:
+                typer.echo(f"Already absent from the worktree: {path}")
         else:
             typer.echo(f"Retained as a human-confirmed repository artifact: {path}")
         record_validation_artifact_decision(run, path, action)
@@ -1195,6 +1250,18 @@ def _review_tracked_junk(store: RunStore, run) -> bool:
 
 def _prompt_tracked_junk_action(path: str) -> ValidationArtifactAction | None:
     while True:
+        if must_not_publish_disposable(path):
+            choice = typer.prompt(
+                f"`{path}` is disposable metadata and cannot be published. [d]elete / [s]top",
+                default="s",
+                show_default=False,
+            ).strip().lower()
+            if choice in {"d", "delete"}:
+                return ValidationArtifactAction.DELETED
+            if choice in {"", "s", "stop"}:
+                return None
+            typer.echo("Enter d to delete or s to stop.")
+            continue
         choice = typer.prompt(
             f"How should Repo Curator handle `{path}`? [d]elete / [k]eep / [s]top",
             default="s",
@@ -1209,12 +1276,40 @@ def _prompt_tracked_junk_action(path: str) -> ValidationArtifactAction | None:
         typer.echo("Enter d to delete, k to keep, or s to stop.")
 
 
-def _delete_tracked_artifact(repository_path: Path, relative_path: str) -> None:
-    """Use Git to remove one reviewed tracked file without force or recursion."""
+def _delete_tracked_artifact(repository_path: Path, relative_path: str) -> bool:
+    """Delete one reviewed disposable file and report whether it was still present."""
     root = repository_path.expanduser().resolve()
-    target = (root / relative_path).resolve()
-    if root not in target.parents or not target.is_file():
-        raise WorkflowError(f'Cannot safely delete tracked artifact "{relative_path}".')
+    candidate = Path(relative_path)
+    if candidate.is_absolute() or ".." in candidate.parts:
+        raise WorkflowError(f'Cannot safely delete disposable artifact "{relative_path}".')
+    target = root / candidate
+    target_exists = target.exists() or target.is_symlink()
+    if target_exists and not target.is_file() and not target.is_symlink():
+        raise WorkflowError(f'Cannot safely delete disposable artifact "{relative_path}".')
+    tracked = subprocess.run(
+        ["git", "ls-files", "--error-unmatch", "--", relative_path],
+        cwd=root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if tracked.returncode != 0:
+        if not target_exists:
+            return False
+        target.unlink()
+        return True
+    if not target_exists:
+        completed = subprocess.run(
+            ["git", "update-index", "--force-remove", "--", relative_path],
+            cwd=root,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if completed.returncode != 0:
+            detail = (completed.stderr or completed.stdout).strip()
+            raise WorkflowError(f'Could not stage removal of tracked artifact "{relative_path}": {detail}')
+        return True
     completed = subprocess.run(
         ["git", "rm", "--", relative_path],
         cwd=root,
@@ -1225,6 +1320,7 @@ def _delete_tracked_artifact(repository_path: Path, relative_path: str) -> None:
     if completed.returncode != 0:
         detail = (completed.stderr or completed.stdout).strip()
         raise WorkflowError(f'Could not delete tracked artifact "{relative_path}": {detail}')
+    return True
 
 
 def _review_and_publish(store: RunStore, run, publisher: GitHubCliPublisher, plan) -> bool:
@@ -1496,6 +1592,14 @@ def _print_edit_report(run) -> None:
     _print_report_section("Cheap sanity checks", report.cheap_sanity_checks)
     typer.echo()
     _print_report_section("Unresolved concerns", report.unresolved_concerns)
+    provenance = [
+        f"{key}: {fact.value}"
+        for key, fact in run.human_facts.items()
+        if key in {"authorship", "academic_context"}
+    ]
+    if provenance:
+        typer.echo()
+        _print_report_section("Confirmed provenance to verify in README", provenance)
 
 
 def _print_validation_report(report) -> None:
@@ -1803,6 +1907,20 @@ def _print_pending_approvals(run) -> None:
     typer.echo("Pending approvals:")
     for request in run.pending_approval_requests:
         typer.echo(f"- {request.id}: {request.proposed_change}")
+
+
+def _reuse_github_description_facts(run, prior_completed_run) -> list[str]:
+    """Carry forward stable, human-confirmed About details for the same path."""
+    if prior_completed_run is None:
+        return []
+    reused: list[str] = []
+    for key in ("github_description_class_name", "github_description_year"):
+        fact = prior_completed_run.human_facts.get(key)
+        if fact is None or not fact.value.strip():
+            continue
+        record_fact(run, key, fact.value)
+        reused.append(key)
+    return reused
 
 
 def _collect_pending_input(run) -> int:

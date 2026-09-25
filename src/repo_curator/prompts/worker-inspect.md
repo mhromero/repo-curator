@@ -28,6 +28,19 @@ merely because code is old, verbose, duplicated, non-idiomatic, or architectural
 simple. Do not infer personal, academic, authorship, licensing, or intentionality
 facts.
 
+`triage_judgments.clarifications` contains Jev Noul probabilities. They are
+advisory signals, not facts and not a fixed threshold for asking the human. Use a
+stronger signal to prioritise a focused evidence audit for that topic: inspect the
+existing README, source headers, citations, assignment material, and visible
+provenance before deciding what to do. A larger probability means higher audit
+priority only; a smaller probability never overrides direct repository evidence.
+If repository evidence already clearly
+establishes relevant attribution or academic context, preserve it in the plan and
+do not ask a redundant question. If the evidence is absent or ambiguous and a
+public-facing README would otherwise need a personal, academic, or authorship
+claim, return one concise, targeted `FactRequest`. Do not turn a probability into
+an attribution claim yourself.
+
 If `worker_continuation` is true in the supplied context, reassess the prior
 inspection using the newly confirmed facts and return a complete revised report.
 

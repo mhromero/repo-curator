@@ -35,9 +35,12 @@ use should not require knowledge of the internal state machine.
   to rename only the local directory. Explain that no remote is renamed; on a
   declined rename, offer an optional persisted note and leave the workflow safely
   stopped at `BLOCKED`.
-- When validation flags tracked disposable files, list their exact paths and ask
-  the human to delete, keep as an intentional artifact, or stop. A keep decision
-  is persisted for that exact path only, then validation is rerun automatically.
+- When validation flags disposable files, including untracked ones, list their
+  exact paths and ask the human to delete, keep as an intentional artifact, or
+  stop. A keep decision is persisted for that exact path only, then validation
+  is rerun automatically. Operating-system metadata such as `.DS_Store` cannot
+  be kept for publication. A missing `.gitignore` blocks validation and offers a
+  small baseline file for explicit human review and creation.
 - At final review, show validation status and concerns, source-code-change status,
   the exact GitHub target, description, visibility, branch, Git transport, and reviewed Git
   changes before asking for publication approval.
@@ -45,6 +48,9 @@ use should not require knowledge of the internal state machine.
   GitHub About description. The controller renders `Kind for English Class Name @ UNI
   (Year)` using those confirmed facts and the repository name; it never translates
   or invents a course title from a repository slug.
+- When a new guided run is started for the same local repository after an earlier
+  run finished, reuse its previously human-confirmed English class name and year;
+  do not ask for them again unless no prior value exists.
 - Do not run Git or GitHub mutating commands until that final approval. Explain
   when a new repository will be created and that pushes are non-force. For a
   folder without Git metadata, explicitly show the planned Git initialization
@@ -67,6 +73,8 @@ use should not require knowledge of the internal state machine.
 - Internal structured data should be rendered for humans rather than dumped
   directly to the terminal.
 - The CLI should make the current state and next required action clear.
+- During validation, show the current deterministic stage, including when an
+  existing test suite is running under its bounded timeout.
 - Reports should use consistent headings and an empty line between major sections.
   Use light terminal color when supported, without making color necessary to read
   the output.

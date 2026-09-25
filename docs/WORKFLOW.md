@@ -78,11 +78,19 @@ The worker may reason and edit, but the human controls factual claims, risky cha
    from the local directory, the guided
    flow requires a separate persisted approval before renaming that local directory;
    it never renames a remote repository during validation. `VERIFIED` and `PARTIALLY_VERIFIED` enter
-   `READY_FOR_FINAL_REVIEW`; `BLOCKED` stops for human action. For a tracked
-   generated/disposable path, the guided CLI shows every exact path and lets the
-   human delete it or retain it as an intentional artifact. A retained path is a
-   persisted, path-specific human decision; it does not exempt its directory or
-   future generated files.
+   `READY_FOR_FINAL_REVIEW`; `BLOCKED` stops for human action. For every
+   scanner-flagged disposable path, including an untracked one, the guided CLI
+   shows the exact path and lets the human delete it or retain it as an
+   intentional artifact. A retained path is a persisted, path-specific human
+   decision; it does not exempt its directory or future generated files.
+   Operating-system metadata such as `.DS_Store` cannot be retained for
+   publication. A missing `.gitignore` also blocks validation; the guided CLI
+   can show and create a small reviewed baseline on explicit confirmation.
+
+   Jev clarification probabilities are passed to the inspection worker as advisory
+   prioritisation signals. The worker first audits repository evidence; it requests
+   a human fact only when an applicable authorship, academic, or other public claim
+   remains ambiguous.
 
 10. DIAGNOSE, if needed
    The same Codex context reasons about validation failures.

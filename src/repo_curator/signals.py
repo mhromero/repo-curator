@@ -430,7 +430,13 @@ def analyze_repository_files(
     python_imports = _python_import_evidence(files, file_text)
     secret_risks, local_path_risks = _risk_indicators(file_text)
     tracked_junk_paths = sorted(
-        path for path in tracked_paths if _tracked_junk_reason(path) is not None
+        path for path in tracked_paths if disposable_artifact_reason(path) is not None
+    )
+    disposable_paths = sorted(
+        {
+            *(record.path for record in files if disposable_artifact_reason(record.path) is not None),
+            *(path for path in tracked_paths if disposable_artifact_reason(path) is not None),
+        }
     )
     hygiene_findings = _hygiene_findings(
         files,
@@ -459,6 +465,7 @@ def analyze_repository_files(
             secret_risks=secret_risks,
             local_path_risks=local_path_risks,
             tracked_junk_paths=tracked_junk_paths,
+            disposable_paths=disposable_paths,
             hygiene_findings=hygiene_findings,
             gitignore_present=any(record.path == ".gitignore" for record in files),
         ),
@@ -877,7 +884,8 @@ def _artifact_files(
     return results
 
 
-def _tracked_junk_reason(path: str) -> str | None:
+def disposable_artifact_reason(path: str) -> str | None:
+    """Classify known disposable artifacts without deciding whether to remove them."""
     parsed = PurePosixPath(path)
     parts = {part.lower() for part in parsed.parts}
     basename = parsed.name.lower()
@@ -911,6 +919,25 @@ def _tracked_junk_reason(path: str) -> str | None:
     ):
         return "generated_or_environment_path"
     return None
+
+
+def must_not_publish_disposable(path: str) -> bool:
+    """Return whether a path is disposable metadata, never an intentional artifact."""
+    return PurePosixPath(path).name.lower() in {".ds_store", "thumbs.db"}
+
+
+def find_nonpublishable_disposable_paths(root: Path) -> list[str]:
+    """Find metadata files that must never enter an initial commit or staging area."""
+    paths: list[str] = []
+    for candidate in root.rglob("*"):
+        relative = candidate.relative_to(root)
+        if ".git" in relative.parts:
+            continue
+        if (candidate.is_file() or candidate.is_symlink()) and must_not_publish_disposable(
+            relative.as_posix()
+        ):
+            paths.append(relative.as_posix())
+    return sorted(paths)
 
 
 def _hygiene_findings(

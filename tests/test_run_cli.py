@@ -12,10 +12,12 @@ from repo_curator.cli import (
     _drive_guided_workflow,
     _format_git_status_line,
     _print_inspection_report,
+    _print_edit_report,
     _print_final_review,
     _print_approval_request,
     _prompt_required_fact,
     _prompt_updated_repository_name,
+    _review_missing_gitignore,
     _review_tracked_junk,
     _retire_resolved_local_naming_concerns,
     app,
@@ -38,6 +40,8 @@ from repo_curator.workflow import (
     PortfolioClassification,
     PublicationResult,
     RepositoryRun,
+    ValidationArtifactAction,
+    ValidationArtifactDecision,
     ValidationCheck,
     ValidationCheckStatus,
     ValidationReport,
@@ -109,6 +113,24 @@ def test_required_fact_prompt_separates_question_from_response_field(monkeypatch
     output = capsys.readouterr().out
     assert "Input required — missing_input_assets" in output
     assert "  Are the assets needed for execution available?" in output
+
+
+def test_edit_review_highlights_confirmed_provenance(capsys, tmp_path: Path) -> None:
+    run = RepositoryRun(
+        id="p" * 32,
+        repository_profile=scan_repository(tmp_path).repository_profile,
+        human_facts={
+            "authorship": HumanFact(
+                key="authorship",
+                value="The professor supplied starter notebooks.",
+            )
+        },
+        edit_report=EditReport(modified_files=["README.md"]),
+    )
+
+    _print_edit_report(run)
+
+    assert "Confirmed provenance to verify in README:" in capsys.readouterr().out
 
 
 def test_blocked_invalid_repository_name_can_confirm_the_current_directory(
@@ -236,10 +258,126 @@ def test_delete_tracked_artifact_uses_git_rm_for_one_reviewed_file(tmp_path: Pat
     _git(repository, "add", ".DS_Store")
     _git(repository, "commit", "-m", "Initial snapshot")
 
-    _delete_tracked_artifact(repository, ".DS_Store")
+    assert _delete_tracked_artifact(repository, ".DS_Store") is True
 
     assert not disposable.exists()
     assert _git_output(repository, "status", "--short") == "D  .DS_Store"
+
+
+def test_delete_tracked_artifact_removes_one_untracked_disposable_file(tmp_path: Path) -> None:
+    repository = tmp_path / "uni-class"
+    repository.mkdir()
+    disposable = repository / ".DS_Store"
+    disposable.write_text("metadata", encoding="utf-8")
+
+    assert _delete_tracked_artifact(repository, ".DS_Store") is True
+
+    assert not disposable.exists()
+
+
+def test_delete_tracked_artifact_accepts_a_path_that_disappeared_after_validation(tmp_path: Path) -> None:
+    repository = tmp_path / "uni-class"
+    repository.mkdir()
+
+    assert _delete_tracked_artifact(repository, ".DS_Store") is False
+
+
+def test_delete_tracked_artifact_stages_removal_when_a_tracked_file_is_already_absent(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "uni-class"
+    repository.mkdir()
+    disposable = repository / ".DS_Store"
+    disposable.write_text("metadata", encoding="utf-8")
+    _git(repository, "init")
+    _git(repository, "config", "user.email", "test@example.com")
+    _git(repository, "config", "user.name", "Test User")
+    _git(repository, "add", ".DS_Store")
+    _git(repository, "commit", "-m", "Initial snapshot")
+    disposable.unlink()
+
+    assert _delete_tracked_artifact(repository, ".DS_Store") is True
+
+    assert _git_output(repository, "status", "--short") == "D  .DS_Store"
+
+
+def test_blocked_validation_completes_a_saved_delete_decision_after_interruption(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "uni-class"
+    repository.mkdir()
+    disposable = repository / ".DS_Store"
+    disposable.write_text("metadata", encoding="utf-8")
+    _git(repository, "init")
+    _git(repository, "config", "user.email", "test@example.com")
+    _git(repository, "config", "user.name", "Test User")
+    _git(repository, "add", ".DS_Store")
+    _git(repository, "commit", "-m", "Initial snapshot")
+    disposable.unlink()
+    run = RepositoryRun(
+        id="d" * 32,
+        repository_profile=scan_repository(repository).repository_profile,
+        state=WorkflowState.BLOCKED,
+        validation_report=ValidationReport(
+            verification_status=VerificationStatus.BLOCKED,
+            summary="Disposable metadata remains tracked.",
+            checks=[
+                ValidationCheck(
+                    name="Disposable-file scan",
+                    status=ValidationCheckStatus.FAILED,
+                    detail="1 disposable file remains: `.DS_Store`.",
+                    affected_paths=[".DS_Store"],
+                )
+            ],
+        ),
+        validation_artifact_decisions=[
+            ValidationArtifactDecision(
+                path=".DS_Store", action=ValidationArtifactAction.DELETED
+            )
+        ],
+    )
+    store = RunStore(tmp_path / "state")
+    store.create(run)
+
+    assert _review_tracked_junk(store, run) is True
+
+    assert _git_output(repository, "status", "--short") == "D  .DS_Store"
+    assert store.load(run.id).state == WorkflowState.VALIDATING
+
+
+def test_blocked_validation_offers_reviewed_minimal_gitignore(tmp_path: Path, monkeypatch) -> None:
+    repository = tmp_path / "uni-class"
+    repository.mkdir()
+    run = RepositoryRun(
+        id="e" * 32,
+        repository_profile=scan_repository(repository).repository_profile,
+        state=WorkflowState.BLOCKED,
+        validation_report=ValidationReport(
+            verification_status=VerificationStatus.BLOCKED,
+            summary="A .gitignore is required.",
+            checks=[
+                ValidationCheck(
+                    name=".gitignore presence",
+                    status=ValidationCheckStatus.FAILED,
+                    detail="No .gitignore file is present.",
+                    affected_paths=[".gitignore"],
+                )
+            ],
+        ),
+    )
+    store = RunStore(tmp_path / "state")
+    store.create(run)
+    monkeypatch.setattr("repo_curator.cli.typer.confirm", lambda *_args, **_kwargs: True)
+
+    assert _review_missing_gitignore(store, run) is True
+
+    saved_run = store.load(run.id)
+    assert saved_run.state == WorkflowState.VALIDATING
+    assert (repository / ".gitignore").read_text(encoding="utf-8") == (
+        "# Operating-system metadata\n.DS_Store\nThumbs.db\n\n"
+        "# Common generated Python and notebook files\n__pycache__/\n*.py[cod]\n"
+        ".ipynb_checkpoints/\n.venv/\n"
+    )
 
 
 def test_run_cli_persists_classification_and_shows_triage_signals(
@@ -249,6 +387,7 @@ def test_run_cli_persists_classification_and_shows_triage_signals(
     repository = tmp_path / "uni-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
+    (repository / ".gitignore").write_text(".DS_Store\n", encoding="utf-8")
     scan_result = scan_repository(repository)
     triage_result = _triage_result(scan_result.triage_summary)
     monkeypatch.setattr("repo_curator.cli.scan_repository", lambda _path: scan_result)
@@ -463,6 +602,7 @@ def test_inspection_execute_records_worker_report_and_thread(
     repository = tmp_path / "uni-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
+    (repository / ".gitignore").write_text(".DS_Store\n", encoding="utf-8")
     scan_result = scan_repository(repository)
     triage_result = _triage_result(scan_result.triage_summary)
     monkeypatch.setattr("repo_curator.cli.scan_repository", lambda _path: scan_result)
@@ -507,6 +647,7 @@ def test_inspection_execute_failure_stays_inspecting_for_retry(
     repository = tmp_path / "uni-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
+    (repository / ".gitignore").write_text(".DS_Store\n", encoding="utf-8")
     scan_result = scan_repository(repository)
     triage_result = _triage_result(scan_result.triage_summary)
     monkeypatch.setattr("repo_curator.cli.scan_repository", lambda _path: scan_result)
@@ -547,6 +688,7 @@ def test_run_input_batches_pending_inspection_facts(tmp_path: Path, monkeypatch)
     repository = tmp_path / "uni-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
+    (repository / ".gitignore").write_text(".DS_Store\n", encoding="utf-8")
     scan_result = scan_repository(repository)
     triage_result = _triage_result(scan_result.triage_summary)
     monkeypatch.setattr("repo_curator.cli.scan_repository", lambda _path: scan_result)
@@ -590,6 +732,7 @@ def test_run_input_collects_initial_portfolio_classification(tmp_path: Path, mon
     repository = tmp_path / "uni-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
+    (repository / ".gitignore").write_text(".DS_Store\n", encoding="utf-8")
     scan_result = scan_repository(repository)
     triage_result = _triage_result(scan_result.triage_summary)
     monkeypatch.setattr("repo_curator.cli.scan_repository", lambda _path: scan_result)
@@ -619,6 +762,7 @@ def test_interactive_run_start_collects_input_routes_and_inspects(
     repository = tmp_path / "uni-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
+    (repository / ".gitignore").write_text(".DS_Store\n", encoding="utf-8")
     scan_result = scan_repository(repository)
     triage_result = _triage_result(scan_result.triage_summary)
     monkeypatch.setattr("repo_curator.cli.scan_repository", lambda _path: scan_result)
@@ -663,6 +807,7 @@ def test_guided_run_completes_approved_edit_and_resumes_by_repository_path(
     repository = tmp_path / "uni-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
+    (repository / ".gitignore").write_text(".DS_Store\n", encoding="utf-8")
     scan_result = scan_repository(repository)
     triage_result = _triage_result(scan_result.triage_summary)
     monkeypatch.setattr("repo_curator.cli.scan_repository", lambda _path: scan_result)
@@ -704,7 +849,7 @@ def test_guided_run_completes_approved_edit_and_resumes_by_repository_path(
     assert "Resuming Codex thread thread-123 with workspace-write access." in result.stdout
     assert "Edit report" in result.stdout
     assert "Approve these edits?" in result.stdout
-    assert "Verification outcome: PARTIALLY_VERIFIED" in result.stdout
+    assert "Verification outcome: VERIFIED" in result.stdout
     assert run is not None
     assert run.state.value == "READY_FOR_FINAL_REVIEW"
     assert run.worker_runtime is not None
@@ -763,6 +908,97 @@ def test_guided_run_completes_approved_edit_and_resumes_by_repository_path(
     assert RunStore(state_root).load(run.id).state == WorkflowState.FINISHED
 
 
+def test_new_guided_run_reuses_confirmed_github_about_details_from_a_finished_run(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repository = tmp_path / "uni-class"
+    repository.mkdir()
+    (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
+    (repository / ".gitignore").write_text(".DS_Store\n", encoding="utf-8")
+    scan_result = scan_repository(repository)
+    triage_result = _triage_result(scan_result.triage_summary)
+    state_root = tmp_path / "state"
+    store = RunStore(state_root)
+    store.create(
+        RepositoryRun(
+            id="f" * 32,
+            repository_profile=scan_result.repository_profile,
+            state=WorkflowState.FINISHED,
+            human_facts={
+                "github_description_class_name": HumanFact(
+                    key="github_description_class_name",
+                    value="Privacy and Security",
+                ),
+                "github_description_year": HumanFact(
+                    key="github_description_year",
+                    value="2026",
+                ),
+            },
+        )
+    )
+    monkeypatch.setattr("repo_curator.cli.scan_repository", lambda _path: scan_result)
+    monkeypatch.setattr("repo_curator.cli.triage_summary", lambda *_args, **_kwargs: triage_result)
+    captured: dict[str, RepositoryRun] = {}
+
+    def stop_after_start(_store, run, *_args):
+        captured["run"] = run
+
+    monkeypatch.setattr("repo_curator.cli._drive_guided_workflow", stop_after_start)
+    result = CliRunner().invoke(
+        app,
+        ["run", str(repository), "--state-root", str(state_root)],
+    )
+
+    assert result.exit_code == 0
+    assert "Reused previously confirmed GitHub About details" in result.stdout
+    assert captured["run"].human_facts["github_description_class_name"].value == "Privacy and Security"
+    assert captured["run"].human_facts["github_description_year"].value == "2026"
+
+
+def test_final_review_reuses_completed_run_about_details_before_prompting(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repository = tmp_path / "uni-class"
+    repository.mkdir()
+    (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
+    (repository / ".gitignore").write_text(".DS_Store\n", encoding="utf-8")
+    profile = scan_repository(repository).repository_profile
+    state_root = tmp_path / "state"
+    store = RunStore(state_root)
+    completed_run = RepositoryRun(
+        id="c" * 32,
+        repository_profile=profile,
+        state=WorkflowState.FINISHED,
+        human_facts={
+            "github_description_class_name": HumanFact(
+                key="github_description_class_name", value="Privacy and Security"
+            ),
+            "github_description_year": HumanFact(key="github_description_year", value="2026"),
+        },
+    )
+    active_run = RepositoryRun(
+        id="a" * 32,
+        repository_profile=profile,
+        state=WorkflowState.READY_FOR_FINAL_REVIEW,
+        human_facts={
+            "repository_naming": HumanFact(key="repository_naming", value="uni-class"),
+        },
+    )
+    store.create(completed_run)
+    store.create(active_run)
+    monkeypatch.setattr("repo_curator.cli.GitHubCliPublisher", _FinalReviewNoopPublisher)
+    monkeypatch.setattr("repo_curator.cli.typer.confirm", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr("repo_curator.cli.typer.prompt", lambda *_args, **_kwargs: "")
+
+    _drive_guided_workflow(store, active_run, "fake-codex")
+
+    saved_run = store.load(active_run.id)
+    assert saved_run.human_facts["github_description_class_name"].value == "Privacy and Security"
+    assert saved_run.human_facts["github_description_year"].value == "2026"
+
+
 def test_guided_run_renames_local_repository_only_after_explicit_approval(
     tmp_path: Path,
     monkeypatch,
@@ -770,6 +1006,7 @@ def test_guided_run_renames_local_repository_only_after_explicit_approval(
     repository = tmp_path / "old_course_folder"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
+    (repository / ".gitignore").write_text(".DS_Store\n", encoding="utf-8")
     scan_result = scan_repository(repository)
     triage_result = _triage_result(scan_result.triage_summary)
     monkeypatch.setattr("repo_curator.cli.scan_repository", lambda _path: scan_result)
@@ -817,6 +1054,7 @@ def test_guided_blocked_naming_mismatch_offers_direct_rename_without_retry_promp
     repository = tmp_path / "IS_Labs"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
+    (repository / ".gitignore").write_text(".DS_Store\n", encoding="utf-8")
     profile = scan_repository(repository).repository_profile
     run = RepositoryRun(
         id="a" * 32,
@@ -863,6 +1101,7 @@ def test_guided_final_review_collects_visibility_then_publishes_after_explicit_a
     repository = tmp_path / "uni-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
+    (repository / ".gitignore").write_text(".DS_Store\n", encoding="utf-8")
     profile = scan_repository(repository).repository_profile
     run = RepositoryRun(
         id="b" * 32,
@@ -1027,6 +1266,7 @@ def test_guided_validation_continues_directly_to_final_publication_review(
     repository = tmp_path / "uni-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
+    (repository / ".gitignore").write_text(".DS_Store\n", encoding="utf-8")
     profile = scan_repository(repository).repository_profile
     run = RepositoryRun(
         id="f" * 32,
@@ -1141,6 +1381,7 @@ def test_guided_run_renders_r2_approval_before_editing(tmp_path: Path, monkeypat
     repository = tmp_path / "uni-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
+    (repository / ".gitignore").write_text(".DS_Store\n", encoding="utf-8")
     scan_result = scan_repository(repository)
     triage_result = _triage_result(scan_result.triage_summary)
     monkeypatch.setattr("repo_curator.cli.scan_repository", lambda _path: scan_result)
@@ -1194,6 +1435,7 @@ def test_guided_r2_rejection_enters_editing_without_representing_the_plan(tmp_pa
     repository = tmp_path / "uni-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
+    (repository / ".gitignore").write_text(".DS_Store\n", encoding="utf-8")
     scan_result = scan_repository(repository)
     triage_result = _triage_result(scan_result.triage_summary)
     monkeypatch.setattr("repo_curator.cli.scan_repository", lambda _path: scan_result)
@@ -1248,6 +1490,7 @@ def test_guided_edit_rejection_requests_a_revision_in_the_same_worker_context(
     repository = tmp_path / "uni-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
+    (repository / ".gitignore").write_text(".DS_Store\n", encoding="utf-8")
     scan_result = scan_repository(repository)
     triage_result = _triage_result(scan_result.triage_summary)
     monkeypatch.setattr("repo_curator.cli.scan_repository", lambda _path: scan_result)
@@ -1301,6 +1544,7 @@ def test_interactive_run_start_answers_worker_facts_and_resumes_thread(
     repository = tmp_path / "uni-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
+    (repository / ".gitignore").write_text(".DS_Store\n", encoding="utf-8")
     scan_result = scan_repository(repository)
     triage_result = _triage_result(scan_result.triage_summary)
     monkeypatch.setattr("repo_curator.cli.scan_repository", lambda _path: scan_result)
@@ -1367,6 +1611,7 @@ def test_run_continue_answers_worker_facts_and_resumes_thread(
     repository = tmp_path / "uni-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
+    (repository / ".gitignore").write_text(".DS_Store\n", encoding="utf-8")
     scan_result = scan_repository(repository)
     triage_result = _triage_result(scan_result.triage_summary)
     monkeypatch.setattr("repo_curator.cli.scan_repository", lambda _path: scan_result)
@@ -1442,6 +1687,7 @@ def test_run_continue_resumes_approved_worker_for_editing(
     repository = tmp_path / "uni-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
+    (repository / ".gitignore").write_text(".DS_Store\n", encoding="utf-8")
     scan_result = scan_repository(repository)
     triage_result = _triage_result(scan_result.triage_summary)
     monkeypatch.setattr("repo_curator.cli.scan_repository", lambda _path: scan_result)
@@ -1518,6 +1764,7 @@ def test_edit_worker_failure_stays_editing_for_retry(tmp_path: Path, monkeypatch
     repository = tmp_path / "uni-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
+    (repository / ".gitignore").write_text(".DS_Store\n", encoding="utf-8")
     scan_result = scan_repository(repository)
     triage_result = _triage_result(scan_result.triage_summary)
     monkeypatch.setattr("repo_curator.cli.scan_repository", lambda _path: scan_result)

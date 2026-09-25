@@ -36,6 +36,19 @@ def test_inspection_prompt_requires_a_static_organization_and_reference_audit() 
     assert "static organization and reference audit" in prompt
     assert "Trace visible local references" in prompt
     assert "Leave uncertain\nfiles in place" in prompt
+    assert "Jev Noul probabilities" in prompt
+    assert "not a fixed threshold" in prompt
+    assert "higher audit\npriority only" in prompt
+    assert "do not ask a redundant question" in prompt
+
+
+def test_inspection_prompt_receives_raw_jev_scores_as_structured_context() -> None:
+    rendered = render_worker_prompt(
+        PromptAsset.WORKER_INSPECT,
+        {"triage_judgments": {"clarifications": {"authorship": 0.83}}},
+    )
+
+    assert '"authorship": 0.83' in rendered
 
 
 def test_edit_prompt_uses_a_constrained_github_description_kind() -> None:
@@ -56,3 +69,4 @@ def test_edit_prompt_renders_the_adaptive_readme_quality_guide() -> None:
     assert "mandatory quality bar" in rendered
     assert "prose and headings in English" in rendered
     assert "intentionally read-only artifact" in rendered
+    assert "include the applicable English Academic Context or\nProvenance section" in rendered

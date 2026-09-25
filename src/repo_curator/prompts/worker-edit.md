@@ -41,6 +41,10 @@ Keep every template section that applies. Include requirements and setup/run
 guidance whenever a user needs tools, dependencies, or commands to use the work.
 For an intentionally read-only artifact such as an already-executed notebook,
 state that clearly in English and explain that runtime setup is not required.
+When `human_confirmed_facts` establishes instructor, starter-code, collaborator,
+or other third-party material, include the applicable English Academic Context or
+Provenance section accurately. Do not add, remove, or soften attribution when the
+facts or repository evidence do not support doing so.
 Omit a section only when it is clearly superfluous; do not add placeholder text
 or invent facts merely to fill it. Preserve useful existing README material.
 

@@ -34,6 +34,12 @@ class FakeRunner:
         return SimpleNamespace(returncode=code, stdout=stdout, stderr=stderr)
 
 
+@pytest.fixture(autouse=True)
+def _reviewed_gitignore(tmp_path: Path) -> None:
+    """Publication fixtures represent repositories that passed the hygiene gate."""
+    (tmp_path / ".gitignore").write_text(".DS_Store\n", encoding="utf-8")
+
+
 def test_github_description_uses_human_confirmed_english_class_name() -> None:
     assert format_github_description(
         "ucm-procesamiento-lenguaje-natural",
@@ -51,6 +57,34 @@ def test_github_description_rejects_an_empty_class_name() -> None:
 def test_github_description_rejects_an_invalid_year() -> None:
     with pytest.raises(PublicationError, match="four-digit year"):
         format_github_description("ucm-procesamiento-lenguaje-natural", "labs", "NLP", "this year")
+
+
+def test_publisher_refuses_disposable_metadata_before_git_or_github_commands(tmp_path: Path) -> None:
+    (tmp_path / ".DS_Store").write_text("metadata", encoding="utf-8")
+    runner = FakeRunner({})
+
+    with pytest.raises(PublicationError, match="disposable metadata.*`.DS_Store`"):
+        GitHubCliPublisher(runner=runner).prepare(
+            tmp_path,
+            expected_name="ucm-sistemas-autonomos",
+            visibility="public",
+        )
+
+    assert runner.calls == []
+
+
+def test_publisher_refuses_to_publish_without_a_reviewed_gitignore(tmp_path: Path) -> None:
+    (tmp_path / ".gitignore").unlink()
+    runner = FakeRunner({})
+
+    with pytest.raises(PublicationError, match="reviewed .gitignore"):
+        GitHubCliPublisher(runner=runner).prepare(
+            tmp_path,
+            expected_name="ucm-sistemas-autonomos",
+            visibility="public",
+        )
+
+    assert runner.calls == []
 
 
 def test_publisher_creates_confirmed_personal_repository_then_non_force_pushes(tmp_path: Path) -> None:
@@ -123,7 +157,7 @@ def test_publisher_initializes_plain_folder_only_during_approved_publish(tmp_pat
 
     assert plan.initialize_repository is True
     assert plan.branch == "main"
-    assert plan.worktree_status == ("?? README.md",)
+    assert plan.worktree_status == ("?? .gitignore", "?? README.md")
     assert ("git", "init", "--initial-branch", "main") not in runner.calls
 
     publisher.publish(plan)

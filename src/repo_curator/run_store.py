@@ -47,6 +47,19 @@ class RunStore:
         unfinished record is both convenient and deterministic when a repository
         has been curated more than once.
         """
+        return self._latest_for_repository(
+            repository_path,
+            lambda run: run.state != WorkflowState.FINISHED,
+        )
+
+    def latest_finished_for_repository(self, repository_path: Path) -> RepositoryRun | None:
+        """Return the newest completed run for a path, for stable fact reuse."""
+        return self._latest_for_repository(
+            repository_path,
+            lambda run: run.state == WorkflowState.FINISHED,
+        )
+
+    def _latest_for_repository(self, repository_path: Path, matches_state) -> RepositoryRun | None:
         try:
             normalized_path = repository_path.expanduser().resolve(strict=False)
         except OSError as error:
@@ -56,14 +69,10 @@ class RunStore:
 
         matching_runs: list[RepositoryRun] = []
         try:
-            run_paths = self.root.glob("*/run.json")
-            for run_path in run_paths:
+            for run_path in self.root.glob("*/run.json"):
                 run = RepositoryRun.model_validate_json(run_path.read_text(encoding="utf-8"))
                 run_path_value = Path(run.repository_profile.identity.path).expanduser()
-                if (
-                    run.state != WorkflowState.FINISHED
-                    and run_path_value.resolve(strict=False) == normalized_path
-                ):
+                if matches_state(run) and run_path_value.resolve(strict=False) == normalized_path:
                     matching_runs.append(run)
         except (OSError, ValueError) as error:
             raise WorkflowError(f"Could not inspect saved runs: {error}") from error

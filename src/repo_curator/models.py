@@ -131,6 +131,7 @@ class RepositoryEvidence(BaseModel):
     secret_risks: list[RiskIndicator] = Field(default_factory=list)
     local_path_risks: list[RiskIndicator] = Field(default_factory=list)
     tracked_junk_paths: list[str] = Field(default_factory=list)
+    disposable_paths: list[str] = Field(default_factory=list)
     hygiene_findings: list[HygieneFinding] = Field(default_factory=list)
     gitignore_present: bool = False
 

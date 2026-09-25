@@ -6,9 +6,11 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import Callable
 
 from .models import PortfolioClassification
 from .scanner import scan_repository
+from .signals import must_not_publish_disposable
 from .workflow import (
     EditReport,
     ValidationBaseline,
@@ -60,10 +62,13 @@ def validate_repository(
     edit_report: EditReport | None,
     baseline: ValidationBaseline | None,
     retained_artifact_paths: set[str] | None = None,
+    on_progress: Callable[[str], None] | None = None,
 ) -> ValidationReport:
     """Run bounded deterministic checks without installing dependencies or using a network."""
+    _report_progress(on_progress, "Scanning repository files and Git state...")
     profile = scan_repository(repository_path).repository_profile
     evidence = profile.evidence
+    _report_progress(on_progress, "Checking naming, hygiene, and documentation...")
     checks: list[ValidationCheck] = [
         _repository_naming_check(profile.identity.directory_name, repository_naming),
         _hygiene_check(
@@ -71,16 +76,21 @@ def validate_repository(
             evidence.secret_risks,
             "potential secret indicator(s) remain",
         ),
-        _tracked_junk_check(
-            evidence.tracked_junk_paths,
+        _disposable_artifact_check(
+            evidence.disposable_paths,
             retained_artifact_paths or set(),
         ),
         _git_conflict_check(profile.identity.git.status_counts.conflicted if profile.identity.git else 0),
         _readme_check(bool(evidence.readme_signals), classification),
         _gitignore_check(evidence.gitignore_present),
     ]
+    _report_progress(on_progress, "Checking Python source and notebook structure...")
     checks.extend(_python_syntax_checks(repository_path, profile.files))
     checks.extend(_notebook_checks(repository_path, profile.files))
+    _report_progress(
+        on_progress,
+        f"Checking existing Python tests when present (timeout: {PYTEST_TIMEOUT_SECONDS} seconds)...",
+    )
     checks.append(_python_test_check(repository_path, evidence.test_files))
 
     unresolved_concerns = edit_report.unresolved_concerns if edit_report is not None else []
@@ -92,6 +102,11 @@ def validate_repository(
         unresolved_concerns=unresolved_concerns,
         baseline_note=_baseline_note(baseline, profile.identity.git.status_counts if profile.identity.git else None),
     )
+
+
+def _report_progress(callback: Callable[[str], None] | None, message: str) -> None:
+    if callback is not None:
+        callback(message)
 
 
 def _repository_naming_check(current_name: str, confirmed_name: str) -> ValidationCheck:
@@ -134,18 +149,26 @@ def _hygiene_check(name: str, findings: list[object], issue: str) -> ValidationC
     return ValidationCheck(name=name, status=ValidationCheckStatus.PASSED, detail="No findings.")
 
 
-def _tracked_junk_check(
-    tracked_paths: list[str],
+def _disposable_artifact_check(
+    disposable_paths: list[str],
     retained_paths: set[str],
 ) -> ValidationCheck:
-    retained = [path for path in tracked_paths if path in retained_paths]
-    unresolved = [path for path in tracked_paths if path not in retained_paths]
+    retained = [
+        path
+        for path in disposable_paths
+        if path in retained_paths and not must_not_publish_disposable(path)
+    ]
+    unresolved = [
+        path
+        for path in disposable_paths
+        if path not in retained_paths or must_not_publish_disposable(path)
+    ]
     if unresolved:
         return ValidationCheck(
-            name="Tracked-junk scan",
+            name="Disposable-file scan",
             status=ValidationCheckStatus.FAILED,
             detail=(
-                f"{len(unresolved)} tracked disposable file(s) remain: "
+                f"{len(unresolved)} disposable file(s) remain: "
                 + ", ".join(f"`{path}`" for path in unresolved)
                 + "."
             ),
@@ -153,10 +176,10 @@ def _tracked_junk_check(
         )
     if retained:
         return ValidationCheck(
-            name="Tracked-junk scan",
+            name="Disposable-file scan",
             status=ValidationCheckStatus.PASSED,
             detail=(
-                "No unapproved tracked disposable files remain. "
+                "No unapproved disposable files remain. "
                 "Human-confirmed retained artifact(s): "
                 + ", ".join(f"`{path}`" for path in retained)
                 + "."
@@ -164,7 +187,7 @@ def _tracked_junk_check(
             affected_paths=retained,
         )
     return ValidationCheck(
-        name="Tracked-junk scan",
+        name="Disposable-file scan",
         status=ValidationCheckStatus.PASSED,
         detail="No findings.",
     )
@@ -207,9 +230,10 @@ def _gitignore_check(present: bool) -> ValidationCheck:
         )
     return ValidationCheck(
         name=".gitignore presence",
-        status=ValidationCheckStatus.SKIPPED,
-        detail="No .gitignore file is present; suitability could not be fully verified.",
+        status=ValidationCheckStatus.FAILED,
+        detail="No .gitignore file is present; publication is blocked until one is reviewed.",
         required=True,
+        affected_paths=[".gitignore"],
     )
 
 

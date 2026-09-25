@@ -8,9 +8,9 @@ A repository is finished when it is clean, understandable, correctly attributed,
 
 A finished repository should satisfy the following where applicable:
 
-- No obvious local junk such as `.DS_Store`, caches, committed virtual environments, IDE metadata, or temporary files.
+- No obvious local junk such as `.DS_Store`, caches, committed virtual environments, IDE metadata, or temporary files. `.DS_Store` and equivalent operating-system metadata must never be published, whether tracked or untracked.
 - A scanner-flagged generated or disposable path may remain only when the human explicitly confirms that exact path is an intentional repository artifact; the decision must be recorded.
-- `.gitignore` is appropriate for the project.
+- `.gitignore` is appropriate for the project. Its absence blocks publication until the human has reviewed and created one.
 - No credentials, API keys, tokens, personal local paths, or accidentally sensitive material are knowingly published.
 - Structure is reasonable for the original project's complexity. Working coursework is not refactored merely for aesthetics.
 - Dependencies are correctly represented. Suitable Python projects may use `uv` and `pyproject.toml`; other ecosystems use appropriate native tooling. Conversion is never automatic merely for consistency.
@@ -203,6 +203,10 @@ Constraints:
 - Jev does not authorize edits, deletions, source changes, or publication.
 - Jev does not infer personal contribution or academic facts.
 - Jev does not choose the Codex worker model directly.
+- Jev clarification probabilities guide the worker's evidence-first inspection;
+  they are neither personal facts nor automatic question thresholds. The worker
+  asks only when repository evidence cannot safely support an applicable public
+  claim.
 - The deterministic router interprets structured triage output.
 - Triage receives a compact scanner summary, not the entire repository unless a later evaluated need justifies more context.
 
