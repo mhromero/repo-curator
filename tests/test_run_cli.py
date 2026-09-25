@@ -101,7 +101,7 @@ def test_blocked_invalid_repository_name_can_confirm_the_current_directory(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    repository = tmp_path / "uni-2026-class"
+    repository = tmp_path / "uni-class"
     repository.mkdir()
     run = RepositoryRun(
         id="c" * 32,
@@ -124,12 +124,12 @@ def test_blocked_invalid_repository_name_can_confirm_the_current_directory(
     assert _resolve_blocked_validation(store, run) is True
 
     saved_run = store.load(run.id)
-    assert saved_run.human_facts["repository_naming"].value == "uni-2026-class"
+    assert saved_run.human_facts["repository_naming"].value == "uni-class"
     assert saved_run.state == WorkflowState.VALIDATING
 
 
 def test_blocked_tracked_artifact_can_be_retained_and_revalidated(tmp_path: Path, monkeypatch) -> None:
-    repository = tmp_path / "uni-2026-class"
+    repository = tmp_path / "uni-class"
     repository.mkdir()
     profile = scan_repository(repository).repository_profile
     run = RepositoryRun(
@@ -166,7 +166,7 @@ def test_fresh_blocked_validation_offers_tracked_artifact_decision_without_repri
     monkeypatch,
     capsys,
 ) -> None:
-    repository = tmp_path / "uni-2026-class"
+    repository = tmp_path / "uni-class"
     repository.mkdir()
     profile = scan_repository(repository).repository_profile
     run = RepositoryRun(
@@ -212,7 +212,7 @@ def test_fresh_blocked_validation_offers_tracked_artifact_decision_without_repri
 
 
 def test_delete_tracked_artifact_uses_git_rm_for_one_reviewed_file(tmp_path: Path) -> None:
-    repository = tmp_path / "uni-2026-class"
+    repository = tmp_path / "uni-class"
     repository.mkdir()
     disposable = repository / ".DS_Store"
     disposable.write_text("metadata", encoding="utf-8")
@@ -232,7 +232,7 @@ def test_run_cli_persists_classification_and_shows_triage_signals(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    repository = tmp_path / "uni-2026-class"
+    repository = tmp_path / "uni-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
     scan_result = scan_repository(repository)
@@ -348,13 +348,13 @@ def test_inspection_report_separates_major_sections(capsys) -> None:
 
 
 def test_final_review_shows_plain_folder_git_initialization(tmp_path: Path, capsys) -> None:
-    repository = tmp_path / "vgtu-2024-intelligent-systems"
+    repository = tmp_path / "vgtu-intelligent-systems"
     repository.mkdir()
     run = RepositoryRun(id="g" * 32, repository_profile=scan_repository(repository).repository_profile)
     plan = PublicationPlan(
         repository_path=repository,
         owner="maria",
-        name="vgtu-2024-intelligent-systems",
+        name="vgtu-intelligent-systems",
         branch="main",
         visibility="public",
         remote_name=None,
@@ -377,7 +377,7 @@ def test_final_review_shows_plain_folder_git_initialization(tmp_path: Path, caps
 
 
 def test_resolved_local_naming_concern_is_not_carried_into_final_review(tmp_path: Path) -> None:
-    repository = tmp_path / "vgtu-2024-intelligent-systems"
+    repository = tmp_path / "vgtu-intelligent-systems"
     repository.mkdir()
     profile = scan_repository(repository).repository_profile
     run = RepositoryRun(
@@ -385,7 +385,7 @@ def test_resolved_local_naming_concern_is_not_carried_into_final_review(tmp_path
         repository_profile=profile,
         human_facts={
             "repository_naming": HumanFact(
-                key="repository_naming", value="vgtu-2024-intelligent-systems"
+                key="repository_naming", value="vgtu-intelligent-systems"
             )
         },
         edit_report=EditReport(
@@ -416,7 +416,7 @@ def test_final_revision_confirms_one_name_mentioned_in_feedback(monkeypatch, tmp
         id="d" * 32,
         repository_profile=profile,
         human_facts={
-            "repository_naming": HumanFact(key="repository_naming", value="vgtu-2024-old-name")
+            "repository_naming": HumanFact(key="repository_naming", value="vgtu-old-name")
         },
     )
     monkeypatch.setattr("repo_curator.cli.typer.confirm", lambda *_args, **_kwargs: True)
@@ -427,8 +427,8 @@ def test_final_revision_confirms_one_name_mentioned_in_feedback(monkeypatch, tmp
 
     assert _prompt_updated_repository_name(
         run,
-        "Rename Data1.txt to data1.txt and rename the repository to vgtu-2024-intelligent-systems",
-    ) == "vgtu-2024-intelligent-systems"
+        "Rename Data1.txt to data1.txt and rename the repository to vgtu-intelligent-systems",
+    ) == "vgtu-intelligent-systems"
 
 
 def test_final_revision_does_not_ask_about_naming_when_feedback_has_no_name(monkeypatch, tmp_path: Path) -> None:
@@ -446,7 +446,7 @@ def test_inspection_execute_records_worker_report_and_thread(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    repository = tmp_path / "uni-2026-class"
+    repository = tmp_path / "uni-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
     scan_result = scan_repository(repository)
@@ -490,7 +490,7 @@ def test_inspection_execute_failure_stays_inspecting_for_retry(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    repository = tmp_path / "uni-2026-class"
+    repository = tmp_path / "uni-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
     scan_result = scan_repository(repository)
@@ -530,7 +530,7 @@ def test_inspection_execute_failure_stays_inspecting_for_retry(
 
 
 def test_run_input_batches_pending_inspection_facts(tmp_path: Path, monkeypatch) -> None:
-    repository = tmp_path / "uni-2026-class"
+    repository = tmp_path / "uni-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
     scan_result = scan_repository(repository)
@@ -573,7 +573,7 @@ def test_run_input_batches_pending_inspection_facts(tmp_path: Path, monkeypatch)
 
 
 def test_run_input_collects_initial_portfolio_classification(tmp_path: Path, monkeypatch) -> None:
-    repository = tmp_path / "uni-2026-class"
+    repository = tmp_path / "uni-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
     scan_result = scan_repository(repository)
@@ -602,7 +602,7 @@ def test_interactive_run_start_collects_input_routes_and_inspects(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    repository = tmp_path / "uni-2026-class"
+    repository = tmp_path / "uni-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
     scan_result = scan_repository(repository)
@@ -646,7 +646,7 @@ def test_guided_run_completes_approved_edit_and_resumes_by_repository_path(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    repository = tmp_path / "uni-2026-class"
+    repository = tmp_path / "uni-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
     scan_result = scan_repository(repository)
@@ -812,7 +812,7 @@ def test_guided_blocked_naming_mismatch_offers_direct_rename_without_retry_promp
         human_facts={
             "repository_naming": HumanFact(
                 key="repository_naming",
-                value="vgtu-2024-intelligent-systems",
+                value="vgtu-intelligent-systems",
             )
         },
         validation_report=ValidationReport(
@@ -831,12 +831,12 @@ def test_guided_blocked_naming_mismatch_offers_direct_rename_without_retry_promp
         input="y\nNatural Language Processing\n2026\ny\nn\n\n",
     )
 
-    renamed_repository = tmp_path / "vgtu-2024-intelligent-systems"
+    renamed_repository = tmp_path / "vgtu-intelligent-systems"
     saved_run = RunStore(state_root).load(run.id)
     assert result.exit_code == 0
     assert "Retry validation after taking human action?" not in result.stdout
-    assert 'Rename the local directory to "vgtu-2024-intelligent-systems"?' in result.stdout
-    assert 'Local repository renamed to "vgtu-2024-intelligent-systems". No remote was changed.' in result.stdout
+    assert 'Rename the local directory to "vgtu-intelligent-systems"?' in result.stdout
+    assert 'Local repository renamed to "vgtu-intelligent-systems". No remote was changed.' in result.stdout
     assert renamed_repository.is_dir()
     assert not repository.exists()
     assert saved_run.state == WorkflowState.READY_FOR_FINAL_REVIEW
@@ -846,7 +846,7 @@ def test_guided_final_review_collects_visibility_then_publishes_after_explicit_a
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    repository = tmp_path / "uni-2026-class"
+    repository = tmp_path / "uni-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
     profile = scan_repository(repository).repository_profile
@@ -856,7 +856,7 @@ def test_guided_final_review_collects_visibility_then_publishes_after_explicit_a
         state=WorkflowState.READY_FOR_FINAL_REVIEW,
         portfolio_classification=PortfolioClassification.B,
         human_facts={
-            "repository_naming": HumanFact(key="repository_naming", value="uni-2026-class")
+            "repository_naming": HumanFact(key="repository_naming", value="uni-class")
         },
         validation_report=ValidationReport(
             verification_status=VerificationStatus.PARTIALLY_VERIFIED,
@@ -914,10 +914,10 @@ def test_guided_final_review_collects_visibility_then_publishes_after_explicit_a
     assert result.exit_code == 0
     assert "github_visibility:" in result.stdout
     assert "Final publication review" in result.stdout
-    assert "GitHub repository: maria/uni-2026-class" in result.stdout
+    assert "GitHub repository: maria/uni-class" in result.stdout
     assert "Approve publication to this GitHub repository?" in result.stdout
     assert "Final approval recorded. Publishing the reviewed repository..." in result.stdout
-    assert "Published maria/uni-2026-class branch main at abc123." in result.stdout
+    assert "Published maria/uni-class branch main at abc123." in result.stdout
     assert saved_run.state == WorkflowState.FINISHED
     assert saved_run.final_review is not None and saved_run.final_review.approved is True
     assert saved_run.publication_result is not None
@@ -927,7 +927,7 @@ def test_guided_final_review_offers_approved_ssh_retry_after_https_transport_fai
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    repository = tmp_path / "uni-2026-class"
+    repository = tmp_path / "uni-class"
     repository.mkdir()
     profile = scan_repository(repository).repository_profile
     run = RepositoryRun(
@@ -936,7 +936,7 @@ def test_guided_final_review_offers_approved_ssh_retry_after_https_transport_fai
         state=WorkflowState.READY_FOR_FINAL_REVIEW,
         portfolio_classification=PortfolioClassification.B,
         human_facts={
-            "repository_naming": HumanFact(key="repository_naming", value="uni-2026-class")
+            "repository_naming": HumanFact(key="repository_naming", value="uni-class")
         },
     )
     state_root = tmp_path / "state"
@@ -968,7 +968,7 @@ def test_guided_final_review_offers_approved_ssh_retry_after_https_transport_fai
                 create_repository=False,
                 existing_repository_name=expected_name,
                 rename_existing_repository=False,
-                existing_remote_url="https://github.com/maria/uni-2026-class.git",
+                existing_remote_url="https://github.com/maria/uni-class.git",
                 worktree_status=(),
                 git_transport="https",
             )
@@ -1010,7 +1010,7 @@ def test_guided_validation_continues_directly_to_final_publication_review(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    repository = tmp_path / "uni-2026-class"
+    repository = tmp_path / "uni-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
     profile = scan_repository(repository).repository_profile
@@ -1020,7 +1020,7 @@ def test_guided_validation_continues_directly_to_final_publication_review(
         state=WorkflowState.VALIDATING,
         portfolio_classification=PortfolioClassification.B,
         human_facts={
-            "repository_naming": HumanFact(key="repository_naming", value="uni-2026-class")
+            "repository_naming": HumanFact(key="repository_naming", value="uni-class")
         },
     )
     state_root = tmp_path / "state"
@@ -1088,7 +1088,7 @@ def test_guided_validation_continues_directly_to_final_publication_review(
 
 
 def test_low_level_publication_refuses_before_approval(tmp_path: Path, monkeypatch) -> None:
-    repository = tmp_path / "uni-2026-class"
+    repository = tmp_path / "uni-class"
     repository.mkdir()
     profile = scan_repository(repository).repository_profile
     run = RepositoryRun(
@@ -1097,7 +1097,7 @@ def test_low_level_publication_refuses_before_approval(tmp_path: Path, monkeypat
         state=WorkflowState.READY_FOR_FINAL_REVIEW,
         portfolio_classification=PortfolioClassification.B,
         human_facts={
-            "repository_naming": HumanFact(key="repository_naming", value="uni-2026-class")
+            "repository_naming": HumanFact(key="repository_naming", value="uni-class")
         },
     )
     state_root = tmp_path / "state"
@@ -1124,7 +1124,7 @@ def test_low_level_publication_refuses_before_approval(tmp_path: Path, monkeypat
 
 
 def test_guided_run_renders_r2_approval_before_editing(tmp_path: Path, monkeypatch) -> None:
-    repository = tmp_path / "uni-2026-class"
+    repository = tmp_path / "uni-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
     scan_result = scan_repository(repository)
@@ -1177,7 +1177,7 @@ def test_guided_run_renders_r2_approval_before_editing(tmp_path: Path, monkeypat
 
 
 def test_guided_r2_rejection_enters_editing_without_representing_the_plan(tmp_path: Path, monkeypatch) -> None:
-    repository = tmp_path / "uni-2026-class"
+    repository = tmp_path / "uni-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
     scan_result = scan_repository(repository)
@@ -1231,7 +1231,7 @@ def test_guided_edit_rejection_requests_a_revision_in_the_same_worker_context(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    repository = tmp_path / "uni-2026-class"
+    repository = tmp_path / "uni-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
     scan_result = scan_repository(repository)
@@ -1284,7 +1284,7 @@ def test_interactive_run_start_answers_worker_facts_and_resumes_thread(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    repository = tmp_path / "uni-2026-class"
+    repository = tmp_path / "uni-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
     scan_result = scan_repository(repository)
@@ -1349,7 +1349,7 @@ def test_run_continue_answers_worker_facts_and_resumes_thread(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    repository = tmp_path / "uni-2026-class"
+    repository = tmp_path / "uni-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
     scan_result = scan_repository(repository)
@@ -1424,7 +1424,7 @@ def test_run_continue_resumes_approved_worker_for_editing(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    repository = tmp_path / "uni-2026-class"
+    repository = tmp_path / "uni-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
     scan_result = scan_repository(repository)
@@ -1500,7 +1500,7 @@ def test_run_continue_resumes_approved_worker_for_editing(
 
 
 def test_edit_worker_failure_stays_editing_for_retry(tmp_path: Path, monkeypatch) -> None:
-    repository = tmp_path / "uni-2026-class"
+    repository = tmp_path / "uni-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
     scan_result = scan_repository(repository)

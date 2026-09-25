@@ -29,6 +29,19 @@ allowed only when non-destructive and relevant to approved work; they are not
 final validation. Do not add Repo Curator state or internal files to the target
 repository.
 
+When an approved edit creates or substantially improves a README, use the
+following template as an adaptive quality guide. Keep every section that is
+applicable to this repository, especially requirements and setup/run instructions
+when a user needs tools, dependencies, or commands to use it. Omit a section only
+when it is clearly superfluous for the repository; do not add placeholder text or
+invent facts merely to fill it. Preserve useful existing README material.
+
+--- README quality guide ---
+
+{{ readme_template }}
+
+--- End README quality guide ---
+
 If additional authority is needed, make no such change and return an
 `ApprovalRequest` in the required `EditReport`. Treat declined R2 requests and
 their human decision notes as constraints; do not retry them unless the human

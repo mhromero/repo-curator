@@ -1,5 +1,7 @@
 # Project Name
 
+Participants: (if more than 1)
+
 ## Overview
 
 Briefly explain what the project does and its scope. Use repository evidence and

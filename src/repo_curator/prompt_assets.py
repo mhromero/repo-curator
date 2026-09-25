@@ -20,6 +20,7 @@ class PromptAssetError(RuntimeError):
 
 
 _CONTEXT_PLACEHOLDER = "{{ context_json }}"
+_README_TEMPLATE_PLACEHOLDER = "{{ readme_template }}"
 
 
 def load_prompt_asset(asset: PromptAsset) -> str:
@@ -31,7 +32,7 @@ def load_prompt_asset(asset: PromptAsset) -> str:
 
 
 def render_worker_prompt(asset: PromptAsset, context: Mapping[str, object]) -> str:
-    """Render the sole dynamic worker field as readable, deterministic JSON."""
+    """Render a phase prompt with its structured context and static guidance assets."""
     if asset not in {
         PromptAsset.WORKER_INSPECT,
         PromptAsset.WORKER_EDIT,
@@ -42,6 +43,16 @@ def render_worker_prompt(asset: PromptAsset, context: Mapping[str, object]) -> s
     if template.count(_CONTEXT_PLACEHOLDER) != 1:
         raise PromptAssetError(
             f"Worker prompt {asset.value} must contain exactly one {_CONTEXT_PLACEHOLDER} placeholder."
+        )
+    if asset == PromptAsset.WORKER_EDIT:
+        if template.count(_README_TEMPLATE_PLACEHOLDER) != 1:
+            raise PromptAssetError(
+                f"Worker prompt {asset.value} must contain exactly one "
+                f"{_README_TEMPLATE_PLACEHOLDER} placeholder."
+            )
+        template = template.replace(
+            _README_TEMPLATE_PLACEHOLDER,
+            load_prompt_asset(PromptAsset.README_TEMPLATE).strip(),
         )
     context_json = json.dumps(context, indent=2, sort_keys=True)
     return template.replace(_CONTEXT_PLACEHOLDER, context_json)

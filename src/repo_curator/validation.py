@@ -22,9 +22,13 @@ PYTEST_TIMEOUT_SECONDS = 60
 MAX_PYTHON_SOURCE_BYTES = 1_000_000
 # The class component is a slug and may itself contain hyphens, e.g.
 # ``ucm-procesamiento-lenguaje-natural``.
-REPOSITORY_NAMING_PATTERN = re.compile(r"^[A-Za-z0-9]+-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$")
+# A legacy ``uni-year-class`` name must not be accepted by treating its year as
+# the first class slug. The class component may otherwise contain hyphens.
+REPOSITORY_NAMING_PATTERN = re.compile(
+    r"^[A-Za-z0-9]+-(?![0-9]{4}(?:-|$))[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$"
+)
 REPOSITORY_NAMING_CANDIDATE_PATTERN = re.compile(
-    r"(?<![A-Za-z0-9-])([A-Za-z0-9]+-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)(?![A-Za-z0-9-])"
+    r"(?<![A-Za-z0-9-])([A-Za-z0-9]+-(?![0-9]{4}(?:-|$))[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)(?![A-Za-z0-9-])"
 )
 
 

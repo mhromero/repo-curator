@@ -43,3 +43,13 @@ def test_edit_prompt_uses_a_constrained_github_description_kind() -> None:
 
     assert "github_description_kind" in prompt
     assert "`assignments`, `coursework`, `project`,\nor `labs`" in prompt
+
+
+def test_edit_prompt_renders_the_adaptive_readme_quality_guide() -> None:
+    rendered = render_worker_prompt(PromptAsset.WORKER_EDIT, {"run_id": "run-123"})
+
+    assert "{{ readme_template }}" not in rendered
+    assert "--- README quality guide ---" in rendered
+    assert "## Getting Started" in rendered
+    assert "Omit a section only\nwhen" in rendered
+    assert "it is clearly superfluous" in rendered

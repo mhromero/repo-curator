@@ -73,8 +73,9 @@ Specialization comes from prompts and phase boundaries, not separate agents that
 
 The canonical phase instructions are packaged Markdown assets under
 `src/repo_curator/prompts/`. The worker renders one structured JSON context block
-into each phase template through `prompt_assets`; prompt text is not assembled in
-the adapter or loaded from the target repository. This keeps worker behavior
+into each phase template through `prompt_assets`. The edit prompt also embeds the
+packaged README quality guide as static, adaptive guidance; it is not a rigid
+document shape. Prompt text is not assembled in the adapter or loaded from the target repository. This keeps worker behavior
 reviewable and editable without changing orchestration code, while Python remains
 the authority for sandbox selection, output schemas, state transitions, approvals,
 and publication safeguards.

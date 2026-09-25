@@ -232,7 +232,7 @@ def test_finished_requires_explicit_final_human_approval(tmp_path: Path) -> None
     finish_publication(
         run,
         PublicationResult(
-            repository="maria/uni-2026-class",
+            repository="maria/uni-class",
             branch="main",
             commit_sha="abc123",
             created_repository=True,
@@ -282,7 +282,7 @@ def test_validation_requires_human_naming_confirmation_and_records_outcome(tmp_p
     assert run.state == WorkflowState.WAITING_FOR_INPUT
     assert run.resume_state == WorkflowState.VALIDATING
 
-    record_fact(run, "repository_naming", "uni-2026-class")
+    record_fact(run, "repository_naming", "uni-class")
     assert run.state == WorkflowState.VALIDATING
 
     record_validation_report(
@@ -424,7 +424,7 @@ def _triaged_run(profile, triage_result):
 
 
 def _scan_and_triage(tmp_path: Path):
-    repository = tmp_path / "uni-2026-class"
+    repository = tmp_path / "uni-class"
     repository.mkdir()
     (repository / "README.md").write_text("# Sample\n", encoding="utf-8")
     scan_result = scan_repository(repository)
