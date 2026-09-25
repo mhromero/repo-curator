@@ -1,0 +1,450 @@
+{
+  "schema_version": 1,
+  "case": {
+    "schema_version": 1,
+    "case_id": "student-web-coursework",
+    "repository_kind": "student_coursework",
+    "consent_to_publish_sanitized_result": false,
+    "example_only": false
+  },
+  "automatic": {
+    "source_run_id": "0a71b8b0a86f4ecc82e5d2a80ee02f58",
+    "final_state": "FINISHED",
+    "run_duration_seconds": 22221.904,
+    "transitions": [
+      {
+        "action": "attach_triage_result",
+        "from_state": "SCANNED",
+        "to_state": "TRIAGED",
+        "elapsed_since_previous_seconds": 0.0
+      },
+      {
+        "action": "request_human_input",
+        "from_state": "TRIAGED",
+        "to_state": "WAITING_FOR_INPUT",
+        "elapsed_since_previous_seconds": 0.0
+      },
+      {
+        "action": "confirm_human_input",
+        "from_state": "WAITING_FOR_INPUT",
+        "to_state": "TRIAGED",
+        "elapsed_since_previous_seconds": 15.821
+      },
+      {
+        "action": "begin_inspection",
+        "from_state": "TRIAGED",
+        "to_state": "INSPECTING",
+        "elapsed_since_previous_seconds": 0.006
+      },
+      {
+        "action": "request_human_input",
+        "from_state": "INSPECTING",
+        "to_state": "WAITING_FOR_INPUT",
+        "elapsed_since_previous_seconds": 167.664
+      },
+      {
+        "action": "confirm_human_input",
+        "from_state": "WAITING_FOR_INPUT",
+        "to_state": "INSPECTING",
+        "elapsed_since_previous_seconds": 466.309
+      },
+      {
+        "action": "request_human_input",
+        "from_state": "INSPECTING",
+        "to_state": "WAITING_FOR_INPUT",
+        "elapsed_since_previous_seconds": 50.599
+      },
+      {
+        "action": "confirm_human_input",
+        "from_state": "WAITING_FOR_INPUT",
+        "to_state": "INSPECTING",
+        "elapsed_since_previous_seconds": 142.925
+      },
+      {
+        "action": "record_inspection_report",
+        "from_state": "INSPECTING",
+        "to_state": "WAITING_INSPECTION_REVIEW",
+        "elapsed_since_previous_seconds": 45.765
+      },
+      {
+        "action": "approve_inspection_plan",
+        "from_state": "WAITING_INSPECTION_REVIEW",
+        "to_state": "WAITING_APPROVAL",
+        "elapsed_since_previous_seconds": 215.659
+      },
+      {
+        "action": "resolve_approval_requests",
+        "from_state": "WAITING_APPROVAL",
+        "to_state": "WAITING_INSPECTION_REVIEW",
+        "elapsed_since_previous_seconds": 103.305
+      },
+      {
+        "action": "request_inspection_changes",
+        "from_state": "WAITING_INSPECTION_REVIEW",
+        "to_state": "INSPECTING",
+        "elapsed_since_previous_seconds": 0.005
+      },
+      {
+        "action": "record_inspection_report",
+        "from_state": "INSPECTING",
+        "to_state": "WAITING_INSPECTION_REVIEW",
+        "elapsed_since_previous_seconds": 44.863
+      },
+      {
+        "action": "approve_inspection_plan",
+        "from_state": "WAITING_INSPECTION_REVIEW",
+        "to_state": "WAITING_APPROVAL",
+        "elapsed_since_previous_seconds": 40.735
+      },
+      {
+        "action": "resolve_approval_requests",
+        "from_state": "WAITING_APPROVAL",
+        "to_state": "EDITING",
+        "elapsed_since_previous_seconds": 86.62
+      },
+      {
+        "action": "record_edit_report",
+        "from_state": "EDITING",
+        "to_state": "WAITING_EDIT_REVIEW",
+        "elapsed_since_previous_seconds": 232.591
+      },
+      {
+        "action": "approve_edit_review",
+        "from_state": "WAITING_EDIT_REVIEW",
+        "to_state": "VALIDATING",
+        "elapsed_since_previous_seconds": 17532.572
+      },
+      {
+        "action": "request_human_input",
+        "from_state": "VALIDATING",
+        "to_state": "WAITING_FOR_INPUT",
+        "elapsed_since_previous_seconds": 0.01
+      },
+      {
+        "action": "confirm_human_input",
+        "from_state": "WAITING_FOR_INPUT",
+        "to_state": "VALIDATING",
+        "elapsed_since_previous_seconds": 28.196
+      },
+      {
+        "action": "record_validation_report",
+        "from_state": "VALIDATING",
+        "to_state": "READY_FOR_FINAL_REVIEW",
+        "elapsed_since_previous_seconds": 6.503
+      },
+      {
+        "action": "request_human_input",
+        "from_state": "READY_FOR_FINAL_REVIEW",
+        "to_state": "WAITING_FOR_INPUT",
+        "elapsed_since_previous_seconds": 1.09
+      },
+      {
+        "action": "confirm_human_input",
+        "from_state": "WAITING_FOR_INPUT",
+        "to_state": "READY_FOR_FINAL_REVIEW",
+        "elapsed_since_previous_seconds": 17.976
+      },
+      {
+        "action": "request_final_review_changes",
+        "from_state": "READY_FOR_FINAL_REVIEW",
+        "to_state": "EDITING",
+        "elapsed_since_previous_seconds": 102.285
+      },
+      {
+        "action": "record_edit_report",
+        "from_state": "EDITING",
+        "to_state": "WAITING_EDIT_REVIEW",
+        "elapsed_since_previous_seconds": 325.291
+      },
+      {
+        "action": "request_edit_changes",
+        "from_state": "WAITING_EDIT_REVIEW",
+        "to_state": "EDITING",
+        "elapsed_since_previous_seconds": 500.17
+      },
+      {
+        "action": "record_edit_report",
+        "from_state": "EDITING",
+        "to_state": "WAITING_EDIT_REVIEW",
+        "elapsed_since_previous_seconds": 82.988
+      },
+      {
+        "action": "request_edit_changes",
+        "from_state": "WAITING_EDIT_REVIEW",
+        "to_state": "EDITING",
+        "elapsed_since_previous_seconds": 141.436
+      },
+      {
+        "action": "record_edit_report",
+        "from_state": "EDITING",
+        "to_state": "WAITING_EDIT_REVIEW",
+        "elapsed_since_previous_seconds": 16.117
+      },
+      {
+        "action": "approve_edit_review",
+        "from_state": "WAITING_EDIT_REVIEW",
+        "to_state": "VALIDATING",
+        "elapsed_since_previous_seconds": 109.914
+      },
+      {
+        "action": "record_validation_report",
+        "from_state": "VALIDATING",
+        "to_state": "READY_FOR_FINAL_REVIEW",
+        "elapsed_since_previous_seconds": 0.065
+      },
+      {
+        "action": "request_final_review_changes",
+        "from_state": "READY_FOR_FINAL_REVIEW",
+        "to_state": "EDITING",
+        "elapsed_since_previous_seconds": 109.91
+      },
+      {
+        "action": "record_edit_report",
+        "from_state": "EDITING",
+        "to_state": "WAITING_EDIT_REVIEW",
+        "elapsed_since_previous_seconds": 152.535
+      },
+      {
+        "action": "approve_edit_review",
+        "from_state": "WAITING_EDIT_REVIEW",
+        "to_state": "VALIDATING",
+        "elapsed_since_previous_seconds": 130.123
+      },
+      {
+        "action": "record_validation_report",
+        "from_state": "VALIDATING",
+        "to_state": "READY_FOR_FINAL_REVIEW",
+        "elapsed_since_previous_seconds": 0.062
+      },
+      {
+        "action": "request_final_review_changes",
+        "from_state": "READY_FOR_FINAL_REVIEW",
+        "to_state": "EDITING",
+        "elapsed_since_previous_seconds": 28.256
+      },
+      {
+        "action": "record_edit_report",
+        "from_state": "EDITING",
+        "to_state": "WAITING_EDIT_REVIEW",
+        "elapsed_since_previous_seconds": 40.293
+      },
+      {
+        "action": "approve_edit_review",
+        "from_state": "WAITING_EDIT_REVIEW",
+        "to_state": "VALIDATING",
+        "elapsed_since_previous_seconds": 22.28
+      },
+      {
+        "action": "record_validation_report",
+        "from_state": "VALIDATING",
+        "to_state": "READY_FOR_FINAL_REVIEW",
+        "elapsed_since_previous_seconds": 0.055
+      },
+      {
+        "action": "complete_github_publication",
+        "from_state": "READY_FOR_FINAL_REVIEW",
+        "to_state": "FINISHED",
+        "elapsed_since_previous_seconds": 1260.91
+      }
+    ],
+    "triage": {
+      "provider_model": "jev-1.13.0",
+      "input_tokens": 10503,
+      "output_tokens": 671,
+      "choices": {
+        "project_extent": {
+          "choice": "multi_component",
+          "confidence": 0.76,
+          "probabilities": {
+            "single_project": 0.06,
+            "small_exercise": 0.11,
+            "multi_component": 0.82,
+            "unclear": 0.01
+          }
+        },
+        "repository_completeness": {
+          "choice": "usable_with_presentation_gaps",
+          "confidence": 0.26,
+          "probabilities": {
+            "archive_or_reference": 0.36,
+            "usable_with_presentation_gaps": 0.41000000000000003,
+            "partial_or_ambiguous": 0.21,
+            "ready_with_minor_gaps": 0.02,
+            "unclear": 0.0
+          }
+        },
+        "cleanup_effort": {
+          "choice": "substantial",
+          "confidence": 0.71,
+          "probabilities": {
+            "moderate": 0.21,
+            "substantial": 0.78,
+            "light": 0.01,
+            "unclear": 0.0
+          }
+        },
+        "repository_composition": {
+          "choice": "multi_component_project",
+          "confidence": 0.59,
+          "probabilities": {
+            "unclear": 0.03,
+            "data_or_model_project": 0.0,
+            "mixed": 0.09,
+            "single_application": 0.22,
+            "analysis_or_notebook_project": 0.01,
+            "library_or_tool": 0.0,
+            "multi_component_project": 0.65
+          }
+        },
+        "technical_domain": {
+          "choice": "web",
+          "confidence": 1.0,
+          "probabilities": {
+            "data_science_or_ml": 0.0,
+            "mixed": 0.0,
+            "library_or_framework": 0.0,
+            "general_application_or_cli": 0.0,
+            "scientific_or_numerical": 0.0,
+            "systems_or_low_level": 0.0,
+            "web": 1.0,
+            "unclear": 0.0
+          }
+        },
+        "organization_treatment": {
+          "choice": "needs_human_review",
+          "confidence": 0.18,
+          "probabilities": {
+            "rename_candidate": 0.16,
+            "split_candidate": 0.19,
+            "needs_human_review": 0.32,
+            "keep": 0.12,
+            "merge_candidate": 0.2,
+            "unclear": 0.01
+          }
+        },
+        "readme_expectation": {
+          "choice": "brief_context",
+          "confidence": 0.69,
+          "probabilities": {
+            "brief_context": 0.75,
+            "needs_human_context": 0.19,
+            "reproducibility_and_assets": 0.01,
+            "setup_and_usage": 0.04,
+            "unclear": 0.01
+          }
+        },
+        "reproducibility_expectation": {
+          "choice": "representative_check",
+          "confidence": 0.42,
+          "probabilities": {
+            "documentation_only": 0.35,
+            "requires_human_intent": 0.08,
+            "unclear": 0.01,
+            "representative_check": 0.52,
+            "repeatable_environment_and_tests": 0.04
+          }
+        }
+      },
+      "clarification_probabilities": {
+        "authorship": 0.72,
+        "academic_context": 0.85,
+        "repository_boundaries": 0.61,
+        "data_asset_rights": 0.7,
+        "intended_execution": 0.65
+      }
+    },
+    "routing": {
+      "policy_version": "r6-v1",
+      "work_depth": "minimal",
+      "capability_cost_class": "economy",
+      "model_family": "luna",
+      "provider_model": "gpt-5.6-luna",
+      "reasoning_effort": "medium",
+      "portfolio_classification": "C",
+      "project_extent": "multi_component",
+      "cleanup_effort": "substantial",
+      "reason_codes": [
+        "portfolio_c",
+        "project_extent_multi_component",
+        "cleanup_effort_substantial"
+      ]
+    },
+    "worker": {
+      "backend": "codex_cli",
+      "provider_model": "gpt-5.6-luna",
+      "reasoning_effort": "medium",
+      "inspection_attempts": 5,
+      "edit_attempts": 6,
+      "last_attempt_failed": false,
+      "last_attempt_duration_seconds": 40.289,
+      "input_tokens": 10226313,
+      "cached_input_tokens": 9572608,
+      "output_tokens": 47755,
+      "reasoning_output_tokens": 13942
+    },
+    "human_interventions": {
+      "portfolio_classification_recorded": true,
+      "confirmed_canonical_fact_topics": [
+        "github_visibility",
+        "repository_naming"
+      ],
+      "other_confirmed_fact_count": 8,
+      "pending_fact_count": 0,
+      "approval_status_counts": {
+        "approved": 7
+      },
+      "inspection_review_outcome": "approved",
+      "edit_review_outcome": "approved",
+      "final_review_approved": true
+    },
+    "validation": {
+      "verification_status": "PARTIALLY_VERIFIED",
+      "check_status_counts": {
+        "not_applicable": 3,
+        "passed": 5,
+        "skipped": 1
+      },
+      "unresolved_concern_count": 1,
+      "human_note_count": 0
+    },
+    "publication": {
+      "completed": true,
+      "created_repository": false
+    },
+    "escalations": {
+      "count": 0,
+      "decisions": []
+    },
+    "unavailable_evidence": [
+      "Repository path, file names, source content, README text, and Git remote identity are excluded.",
+      "Human fact values, approval notes, worker reports, worker error text, and Codex thread history are excluded.",
+      "Only the most recent worker-attempt duration and usage are persisted; per-attempt histories are unavailable.",
+      "Provider billing prices and actual monetary cost are unavailable.",
+      "The final GitHub publication plan and post-publication GitHub state are not persisted."
+    ]
+  },
+  "human": {
+    "triage_project_extent": "supported",
+    "triage_cleanup_effort": "supported",
+    "triage_other_judgments": "mixed",
+    "clarification_signal_usefulness": {
+      "academic_context": "supported",
+      "authorship": "supported",
+      "data_asset_rights": "supported",
+      "intended_execution": "supported",
+      "repository_boundaries": "supported"
+    },
+    "routing_proportionality": "supported",
+    "human_interventions": "supported",
+    "intervention_assessments": [
+      "it asked me to inspect the same plan repeaedly after i said it was ok"
+    ],
+    "original_student_work_preservation": "supported",
+    "validation_outcome_appropriateness": "supported",
+    "publication_outcome_appropriateness": "supported",
+    "sanitized_notes": [
+      "found an issue with the shh/http github remote publication, troubleshooted it with codex"
+    ]
+  },
+  "shadow_routing": []
+}
