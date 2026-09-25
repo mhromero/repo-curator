@@ -7,6 +7,7 @@ import subprocess
 from typer.testing import CliRunner
 
 from repo_curator.cli import (
+    _resolve_blocked_validation,
     _delete_tracked_artifact,
     _drive_guided_workflow,
     _format_git_status_line,
@@ -53,7 +54,14 @@ class _FinalReviewNoopPublisher:
     def __init__(self, **_kwargs) -> None:
         pass
 
-    def prepare(self, path: Path, *, expected_name: str, visibility: str | None):
+    def prepare(
+        self,
+        path: Path,
+        *,
+        expected_name: str,
+        visibility: str | None,
+        description: str | None = None,
+    ):
         return PublicationPlan(
             repository_path=path.resolve(),
             owner="maria",
@@ -87,6 +95,37 @@ def test_approval_request_separates_labeled_sections(capsys) -> None:
     assert "Problem: A meaningful artifact may move.\n\nProposed change:" in output
     assert "Reason: The current layout obscures the package.\n\nAffected files:" in output
     assert "Expected behavior change: Existing imports may need updates.\n\n" in output
+
+
+def test_blocked_invalid_repository_name_can_confirm_the_current_directory(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repository = tmp_path / "uni-2026-class"
+    repository.mkdir()
+    run = RepositoryRun(
+        id="c" * 32,
+        repository_profile=scan_repository(repository).repository_profile,
+        state=WorkflowState.BLOCKED,
+        human_facts={"repository_naming": HumanFact(key="repository_naming", value="no")},
+        validation_report=ValidationReport(
+            verification_status=VerificationStatus.BLOCKED,
+            summary="Repository naming needs confirmation.",
+        ),
+    )
+    store = RunStore(tmp_path / "state")
+    store.create(run)
+    monkeypatch.setattr("repo_curator.cli.typer.confirm", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(
+        "repo_curator.cli.typer.prompt",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("manual name should not be needed")),
+    )
+
+    assert _resolve_blocked_validation(store, run) is True
+
+    saved_run = store.load(run.id)
+    assert saved_run.human_facts["repository_naming"].value == "uni-2026-class"
+    assert saved_run.state == WorkflowState.VALIDATING
 
 
 def test_blocked_tracked_artifact_can_be_retained_and_revalidated(tmp_path: Path, monkeypatch) -> None:
@@ -639,7 +678,7 @@ def test_guided_run_completes_approved_edit_and_resumes_by_repository_path(
             "--codex-bin",
             str(executable),
         ],
-        input="B\ny\ny\ny\nuni-2026-class\ny\nn\n\n",
+        input="B\ny\ny\ny\ny\ny\nNatural Language Processing\ny\nn\n\n",
     )
 
     run = RunStore(state_root).latest_active_for_repository(repository)
@@ -662,7 +701,14 @@ def test_guided_run_completes_approved_edit_and_resumes_by_repository_path(
         def __init__(self, **_kwargs) -> None:
             pass
 
-        def prepare(self, path: Path, *, expected_name: str, visibility: str | None):
+        def prepare(
+            self,
+            path: Path,
+            *,
+            expected_name: str,
+            visibility: str | None,
+            description: str | None = None,
+        ):
             if visibility is None:
                 raise PublicationInputRequired("github_visibility")
             return PublicationPlan(
@@ -730,13 +776,13 @@ def test_guided_run_renames_local_repository_only_after_explicit_approval(
             "--codex-bin",
             str(executable),
         ],
-        input="B\ny\ny\ny\nuni-2026-class\ny\ny\nn\n\n",
+        input="B\ny\ny\ny\nuni-2026-class\ny\ny\nNatural Language Processing\ny\nn\n\n",
     )
 
     renamed_repository = tmp_path / "uni-2026-class"
     run = RunStore(state_root).latest_active_for_repository(renamed_repository)
     assert result.exit_code == 0
-    assert result.stdout.count("repository_naming:") == 1
+    assert "Enter the intended repository name using the `uni-year-class` convention" in result.stdout
     assert 'Rename the local directory to "uni-2026-class"?' in result.stdout
     assert "Current local directory: old-course-folder" in result.stdout
     assert "Required name: uni-2026-class" in result.stdout
@@ -782,7 +828,7 @@ def test_guided_blocked_naming_mismatch_offers_direct_rename_without_retry_promp
     result = runner.invoke(
         app,
         ["run", str(repository), "--state-root", str(state_root)],
-        input="y\nn\n\n",
+        input="y\nNatural Language Processing\ny\nn\n\n",
     )
 
     renamed_repository = tmp_path / "vgtu-2024-intelligent-systems"
@@ -824,7 +870,14 @@ def test_guided_final_review_collects_visibility_then_publishes_after_explicit_a
         def __init__(self, **_kwargs) -> None:
             pass
 
-        def prepare(self, path: Path, *, expected_name: str, visibility: str | None):
+        def prepare(
+            self,
+            path: Path,
+            *,
+            expected_name: str,
+            visibility: str | None,
+            description: str | None = None,
+        ):
             if visibility is None:
                 raise PublicationInputRequired("github_visibility")
             return PublicationPlan(
@@ -854,7 +907,7 @@ def test_guided_final_review_collects_visibility_then_publishes_after_explicit_a
     result = runner.invoke(
         app,
         ["run", str(repository), "--state-root", str(state_root)],
-        input="public\ny\ny\n",
+        input="Natural Language Processing\ny\npublic\ny\ny\n",
     )
 
     saved_run = RunStore(state_root).load(run.id)
@@ -895,7 +948,14 @@ def test_guided_final_review_offers_approved_ssh_retry_after_https_transport_fai
         def __init__(self, **_kwargs) -> None:
             pass
 
-        def prepare(self, path: Path, *, expected_name: str, visibility: str | None):
+        def prepare(
+            self,
+            path: Path,
+            *,
+            expected_name: str,
+            visibility: str | None,
+            description: str | None = None,
+        ):
             if visibility is None:
                 raise PublicationInputRequired("github_visibility")
             return PublicationPlan(
@@ -934,7 +994,7 @@ def test_guided_final_review_offers_approved_ssh_retry_after_https_transport_fai
     result = CliRunner().invoke(
         app,
         ["run", str(repository), "--state-root", str(state_root)],
-        input="public\ny\ny\ny\n",
+        input="Natural Language Processing\ny\npublic\ny\ny\ny\n",
     )
 
     saved_run = RunStore(state_root).load(run.id)
@@ -979,7 +1039,14 @@ def test_guided_validation_continues_directly_to_final_publication_review(
         def __init__(self, **_kwargs) -> None:
             pass
 
-        def prepare(self, path: Path, *, expected_name: str, visibility: str | None):
+        def prepare(
+            self,
+            path: Path,
+            *,
+            expected_name: str,
+            visibility: str | None,
+            description: str | None = None,
+        ):
             if visibility is None:
                 raise PublicationInputRequired("github_visibility")
             return PublicationPlan(
@@ -1010,7 +1077,7 @@ def test_guided_validation_continues_directly_to_final_publication_review(
     result = CliRunner().invoke(
         app,
         ["run", str(repository), "--state-root", str(state_root)],
-        input="public\ny\ny\n",
+        input="Natural Language Processing\ny\npublic\ny\ny\n",
     )
 
     assert result.exit_code == 0
@@ -1097,7 +1164,7 @@ def test_guided_run_renders_r2_approval_before_editing(tmp_path: Path, monkeypat
             "--codex-bin",
             str(executable),
         ],
-        input="B\ny\ny\ny\ny\nuni-2026-class\ny\nn\n\n",
+        input="B\ny\ny\ny\ny\ny\ny\nNatural Language Processing\ny\nn\n\n",
     )
 
     assert result.exit_code == 0
@@ -1150,7 +1217,7 @@ def test_guided_r2_rejection_enters_editing_without_representing_the_plan(tmp_pa
             "--codex-bin",
             str(executable),
         ],
-        input="B\ny\ny\nn\nKeep the existing import paths.\ny\nuni-2026-class\ny\nn\n\n",
+        input="B\ny\ny\nn\nKeep the existing import paths.\ny\ny\ny\nNatural Language Processing\ny\nn\n\n",
     )
 
     assert result.exit_code == 0
@@ -1195,7 +1262,7 @@ def test_guided_edit_rejection_requests_a_revision_in_the_same_worker_context(
             "--codex-bin",
             str(executable),
         ],
-        input="B\ny\ny\nn\nKeep the existing README heading.\ny\nuni-2026-class\ny\nn\n\n",
+        input="B\ny\ny\nn\nKeep the existing README heading.\ny\ny\ny\nNatural Language Processing\ny\nn\n\n",
     )
 
     run = RunStore(state_root).latest_active_for_repository(repository)

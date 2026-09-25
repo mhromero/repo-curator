@@ -72,8 +72,10 @@ The worker may reason and edit, but the human controls factual claims, risky cha
 
    Implemented after edit approval in `repo-curator run <path>` or
    `repo-curator run validation execute <run-id>`. It asks for a human-confirmed
-   repository name in the R1 `uni-year-class` format before validating; it never
-   invents the values. If that name differs from the local directory, the guided
+   repository name in the R1 `uni-year-class` format before validating. If the
+   current directory already has a valid name, the human can explicitly retain it
+   without a rename; Repo Curator never invents the values. If that name differs
+   from the local directory, the guided
    flow requires a separate persisted approval before renaming that local directory;
    it never renames a remote repository during validation. `VERIFIED` and `PARTIALLY_VERIFIED` enter
    `READY_FOR_FINAL_REVIEW`; `BLOCKED` stops for human action. For a tracked
@@ -94,8 +96,11 @@ The worker may reason and edit, but the human controls factual claims, risky cha
     has the old local name, the review also shows the exact remote rename before
     it can occur. For a plain local folder, the review instead shows the planned
     `main` branch initialization and exact initial-commit files; Git is not
-    initialized until approval. A worker-supplied factual GitHub description is
-    also shown exactly and applied only after approval.
+    initialized until approval. Before that review, the guided CLI collects the
+    exact English class name for the GitHub About description. It combines that
+    human-confirmed name and the repository university/year with a constrained
+    worker-selected kind (`assignments`, `coursework`, `project`, or `labs`),
+    then shows the resulting description exactly before approval.
 
     Existing remotes retain their configured transport. A new GitHub repository
     uses the authenticated GitHub CLI `git_protocol` preference. If an approved

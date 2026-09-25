@@ -21,6 +21,7 @@ from .publication import (
     PublicationError,
     PublicationInputRequired,
     PublicationPushError,
+    format_github_description,
 )
 from .run_store import RunStore
 from .routing import RoutingConfig, RoutingError, migrate_legacy_provider_model
@@ -35,6 +36,7 @@ from .validation import (
 from .workflow import (
     ApprovalStatus,
     EditReport,
+    GitHubDescriptionKind,
     InspectionReport,
     PortfolioClassification,
     ValidationArtifactAction,
@@ -65,6 +67,7 @@ from .workflow import (
     request_inspection_changes,
     request_repository_naming_confirmation,
     request_repository_rename_approval,
+    request_github_description_class_name,
     request_github_visibility,
     retry_validation,
     retained_validation_artifact_paths,
@@ -943,13 +946,30 @@ def _prepare_publication(run, publisher: GitHubCliPublisher):
         "expected_name": naming.value,
         "visibility": visibility.value if visibility is not None else None,
     }
-    description = run.edit_report.github_description if run.edit_report is not None else None
-    if description is not None:
-        kwargs["description"] = description
+    kwargs["description"] = format_github_description(
+        naming.value,
+        _github_description_kind(run).value,
+        _github_description_class_name(run),
+    )
     return publisher.prepare(
         Path(run.repository_profile.identity.path),
         **kwargs,
     )
+
+
+def _github_description_kind(run) -> GitHubDescriptionKind:
+    if run.edit_report is not None and run.edit_report.github_description_kind is not None:
+        return run.edit_report.github_description_kind
+    if run.portfolio_classification == PortfolioClassification.A:
+        return GitHubDescriptionKind.PROJECT
+    return GitHubDescriptionKind.COURSEWORK
+
+
+def _github_description_class_name(run) -> str:
+    fact = run.human_facts.get("github_description_class_name")
+    if fact is None:
+        raise WorkflowError("Final publication requires a human-confirmed English class name.")
+    return fact.value
 
 
 def _execute_publication(store: RunStore, run, publisher: GitHubCliPublisher) -> None:
@@ -1066,6 +1086,9 @@ def _drive_guided_workflow(
         if run.state == WorkflowState.READY_FOR_FINAL_REVIEW:
             if _retire_resolved_local_naming_concerns(run):
                 store.save(run)
+            if request_github_description_class_name(run):
+                store.save(run)
+                continue
             publisher = GitHubCliPublisher(gh_bin=gh_bin)
             try:
                 plan = _prepare_publication(run, publisher)
@@ -1093,6 +1116,8 @@ def _drive_guided_workflow(
 
 def _resolve_blocked_validation(store: RunStore, run) -> bool:
     """Offer only the direct, structured remediation available for this report."""
+    if _repository_name_needs_confirmation(run):
+        return _confirm_repository_naming(store, run)
     if _repository_name_needs_rename(run):
         typer.echo("The repository naming issue can be resolved by the local-rename decision below.")
         return _review_repository_rename(store, run)
@@ -1290,6 +1315,25 @@ def _repository_name_needs_rename(run) -> bool:
         request.status == ApprovalStatus.APPROVED
         for request in run.validation_approval_requests
     )
+
+
+def _repository_name_needs_confirmation(run) -> bool:
+    fact = run.human_facts.get("repository_naming")
+    return fact is not None and not repository_name_is_valid(fact.value)
+
+
+def _confirm_repository_naming(store: RunStore, run) -> bool:
+    """Replace an invalid prior name response with an explicit current-name choice."""
+    current_name = run.repository_profile.identity.directory_name
+    confirmed_name = _prompt_repository_naming(current_name)
+    record_fact(run, "repository_naming", confirmed_name)
+    retry_validation(run)
+    store.save(run)
+    if confirmed_name == current_name:
+        typer.echo("Current local directory name confirmed; no rename was requested.")
+    else:
+        typer.echo("Updated repository name recorded; it will be checked before any rename.")
+    return True
 
 
 def _retire_resolved_local_naming_concerns(run) -> bool:
@@ -1720,7 +1764,12 @@ def _collect_pending_input(run) -> int:
 
     responses: dict[str, str] = {}
     for request in run.pending_fact_requests:
-        responses[request.key] = _prompt_required_fact(request.key, request.prompt)
+        if request.key == "repository_naming":
+            responses[request.key] = _prompt_repository_naming(
+                run.repository_profile.identity.directory_name
+            )
+        else:
+            responses[request.key] = _prompt_required_fact(request.key, request.prompt)
 
     response_count = len(responses) + (1 if run.portfolio_classification is None else 0)
     if not typer.confirm(f"Save {response_count} human response(s)?", default=True):
@@ -1748,10 +1797,24 @@ def _prompt_required_fact(key: str, prompt: str) -> str:
         value = typer.prompt(f"{key}: {prompt}").strip()
         if value:
             return value
-        if key == "repository_naming":
-            typer.echo("A `uni-year-class` repository name is required.", err=True)
-        else:
-            typer.echo("A response is required. Use 'not applicable' when that is the answer.", err=True)
+        typer.echo("A response is required. Use 'not applicable' when that is the answer.", err=True)
+
+
+def _prompt_repository_naming(current_name: str) -> str:
+    """Confirm a valid existing name before asking a human to supply another one."""
+    if repository_name_is_valid(current_name):
+        _print_report_heading("Repository naming")
+        typer.echo(f"Current local directory: {current_name}")
+        typer.echo("It already follows the required `uni-year-class` convention.")
+        if typer.confirm("Use this name without renaming the local directory?", default=True):
+            return current_name
+    while True:
+        value = typer.prompt(
+            "Enter the intended repository name using the `uni-year-class` convention"
+        ).strip()
+        if repository_name_is_valid(value):
+            return value
+        typer.echo("Repository name must follow the `uni-year-class` convention.", err=True)
 
 
 def _print_pending_input(run) -> None:

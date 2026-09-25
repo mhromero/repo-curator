@@ -16,6 +16,30 @@ class PublicationError(ValueError):
     pass
 
 
+_DESCRIPTION_LABELS = {
+    "assignments": "Assignments",
+    "coursework": "Coursework",
+    "project": "Project",
+    "labs": "Labs",
+}
+
+
+def format_github_description(repository_name: str, kind: str, class_name: str) -> str:
+    """Build the concise About text from a confirmed ``uni-year-class`` name."""
+    university, year, *class_parts = repository_name.split("-")
+    if not university or not year.isdigit() or not class_parts:
+        raise PublicationError(
+            "GitHub description requires a confirmed repository name in `uni-year-class` format."
+        )
+    label = _DESCRIPTION_LABELS.get(kind)
+    if label is None:
+        raise PublicationError(f'Unsupported GitHub description kind "{kind}".')
+    course = class_name.strip()
+    if not course:
+        raise PublicationError("GitHub description requires a human-confirmed English class name.")
+    return f"{label} for {course} @ {university.upper()} ({year})"
+
+
 class PublicationInputRequired(PublicationError):
     def __init__(self, key: str) -> None:
         self.key = key

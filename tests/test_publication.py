@@ -10,6 +10,7 @@ from repo_curator.publication import (
     PublicationError,
     PublicationInputRequired,
     PublicationPushError,
+    format_github_description,
 )
 
 
@@ -31,6 +32,19 @@ class FakeRunner:
             raise AssertionError(f"Unexpected command: {key}")
         code, stdout, stderr = queue.pop(0)
         return SimpleNamespace(returncode=code, stdout=stdout, stderr=stderr)
+
+
+def test_github_description_uses_human_confirmed_english_class_name() -> None:
+    assert format_github_description(
+        "ucm-2026-procesamiento-lenguaje-natural",
+        "labs",
+        "Natural Language Processing",
+    ) == "Labs for Natural Language Processing @ UCM (2026)"
+
+
+def test_github_description_rejects_an_empty_class_name() -> None:
+    with pytest.raises(PublicationError, match="English class name"):
+        format_github_description("ucm-2026-procesamiento-lenguaje-natural", "labs", " ")
 
 
 def test_publisher_creates_confirmed_personal_repository_then_non_force_pushes(tmp_path: Path) -> None:

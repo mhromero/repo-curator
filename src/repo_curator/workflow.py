@@ -61,6 +61,13 @@ class ValidationArtifactAction(StrEnum):
     DELETED = "deleted"
 
 
+class GitHubDescriptionKind(StrEnum):
+    ASSIGNMENTS = "assignments"
+    COURSEWORK = "coursework"
+    PROJECT = "project"
+    LABS = "labs"
+
+
 class FactRequest(BaseModel):
     key: str
     prompt: str
@@ -117,14 +124,7 @@ class EditReport(BaseModel):
     cheap_sanity_checks: list[str] = Field(default_factory=list)
     unresolved_concerns: list[str] = Field(default_factory=list)
     approval_requests: list[ApprovalRequest] = Field(default_factory=list)
-    github_description: str | None = Field(default=None, max_length=160)
-
-    @field_validator("github_description")
-    @classmethod
-    def _normalize_github_description(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        return value.strip() or None
+    github_description_kind: GitHubDescriptionKind | None = None
 
 
 class ValidationBaseline(BaseModel):
@@ -296,9 +296,13 @@ TRIAGE_FACT_PROMPTS = {
     "data_asset_rights": "Clarify publication suitability or rights for data, models, and other assets.",
     "intended_execution": "Clarify the intended execution and validation expectations.",
     "repository_naming": (
-        "Enter the intended repository name using the required `uni-year-class` convention. "
-        "Repo Curator will verify it and can rename the local directory only after your approval; "
-        "it never changes a remote repository."
+        "Confirm the current local directory name or provide the intended name using the required "
+        "`uni-year-class` convention. Repo Curator can rename the local directory only after your "
+        "approval; it never changes a remote repository."
+    ),
+    "github_description_class_name": (
+        "Enter the exact English class name for the GitHub About description "
+        "(for example, `Natural Language Processing`)."
     ),
     "github_visibility": "Choose visibility for the new GitHub repository: public or private.",
 }
@@ -768,6 +772,25 @@ def request_github_visibility(run: RepositoryRun) -> bool:
             FactRequest(
                 key="github_visibility",
                 prompt=TRIAGE_FACT_PROMPTS["github_visibility"],
+                source="publication",
+            )
+        ],
+    )
+    _wait_for_input_if_needed(run, WorkflowState.READY_FOR_FINAL_REVIEW)
+    return True
+
+
+def request_github_description_class_name(run: RepositoryRun) -> bool:
+    """Collect the human-confirmed English course title used in GitHub About text."""
+    _require_state(run, WorkflowState.READY_FOR_FINAL_REVIEW)
+    if "github_description_class_name" in run.human_facts:
+        return False
+    _add_pending_fact_requests(
+        run,
+        [
+            FactRequest(
+                key="github_description_class_name",
+                prompt=TRIAGE_FACT_PROMPTS["github_description_class_name"],
                 source="publication",
             )
         ],

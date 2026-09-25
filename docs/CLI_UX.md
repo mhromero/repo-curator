@@ -27,8 +27,10 @@ use should not require knowledge of the internal state machine.
 - Show actual repository changes before edit approval.
 - At edit review, let the human approve the completed edits or describe a
   revision; an approved review may advance to a later unimplemented phase.
-- Before validation, ask the human for the exact repository name in the R1
-  `uni-year-class` convention rather than inferring academic metadata.
+- Before validation, if the current directory already follows the R1
+  `uni-year-class` convention, ask the human to confirm using it without a local
+  rename. Otherwise ask for the exact intended name rather than inferring
+  academic metadata.
 - If that name differs from the local directory, show a separate approval request
   to rename only the local directory. Explain that no remote is renamed; on a
   declined rename, offer an optional persisted note and leave the workflow safely
@@ -39,6 +41,10 @@ use should not require knowledge of the internal state machine.
 - At final review, show validation status and concerns, source-code-change status,
   the exact GitHub target, description, visibility, branch, Git transport, and reviewed Git
   changes before asking for publication approval.
+- Before final review, collect the exact English class name needed for the GitHub
+  About description. The controller renders `Kind for English Class Name @ UNI
+  (Year)` using that confirmed title and the repository name; it never translates
+  or invents a course title from a repository slug.
 - Do not run Git or GitHub mutating commands until that final approval. Explain
   when a new repository will be created and that pushes are non-force. For a
   folder without Git metadata, explicitly show the planned Git initialization

@@ -23,7 +23,7 @@ A finished repository should satisfy the following where applicable:
 - Academic context and attribution are accurate.
 - Existing licenses and copyright notices are preserved. No license is invented when rights are unclear.
 - The final diff contains only intentional changes and no Repo Curator state or temporary artifacts.
-- Repository name follows naming convention: `uni-year-class`
+- Repository name follows naming convention: `uni-class`
 
 ### Verification status
 
@@ -254,9 +254,13 @@ It may rename an existing remote repository only when the final review explicitl
 shows the exact rename and authenticated ownership checks pass.
 
 When worker evidence supports it, final review may include one concise factual
-GitHub repository description. The exact text must be shown before approval and
-may be applied only after approval. Repo Curator does not infer or manage topics
-or website metadata.
+GitHub repository description. Repo Curator formats it as
+`Kind for English Class Name @ UNI (Year)`: the worker selects a constrained kind
+(`assignments`, `coursework`, `project`, or `labs`), while the human confirms the
+English class name and repository naming supplies the university abbreviation and
+year. The exact text must be shown before
+approval and may be applied only after approval. Repo Curator does not infer or
+manage topics or website metadata.
 
 For a directory that is not yet a local Git repository, final review may propose
 initializing Git on an explicit branch and must list the files that the initial

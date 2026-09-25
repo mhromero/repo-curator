@@ -36,3 +36,10 @@ def test_inspection_prompt_requires_a_static_organization_and_reference_audit() 
     assert "static organization and reference audit" in prompt
     assert "Trace visible local references" in prompt
     assert "Leave uncertain\nfiles in place" in prompt
+
+
+def test_edit_prompt_uses_a_constrained_github_description_kind() -> None:
+    prompt = load_prompt_asset(PromptAsset.WORKER_EDIT)
+
+    assert "github_description_kind" in prompt
+    assert "`assignments`, `coursework`, `project`,\nor `labs`" in prompt
