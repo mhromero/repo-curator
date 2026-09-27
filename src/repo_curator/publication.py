@@ -17,6 +17,14 @@ class PublicationError(ValueError):
     pass
 
 
+class PublicationHygieneError(PublicationError):
+    """Publication detected local hygiene that must be remediated before staging."""
+
+    def __init__(self, message: str, *, affected_paths: list[str] | None = None) -> None:
+        super().__init__(message)
+        self.affected_paths = affected_paths or []
+
+
 _DESCRIPTION_LABELS = {
     "assignments": "Assignments",
     "coursework": "Coursework",
@@ -551,9 +559,13 @@ def _initial_worktree_status(path: Path) -> tuple[str, ...]:
 def _assert_publication_hygiene(path: Path) -> None:
     """Reject metadata that must never be reviewed, staged, or published."""
     if not (path / ".gitignore").is_file():
-        raise PublicationError("Publication requires a reviewed .gitignore file.")
+        raise PublicationHygieneError(
+            "Publication requires a reviewed .gitignore file.",
+            affected_paths=[".gitignore"],
+        )
     blocked = find_nonpublishable_disposable_paths(path)
     if blocked:
-        raise PublicationError(
-            "Publication refuses disposable metadata: " + ", ".join(f"`{item}`" for item in blocked)
+        raise PublicationHygieneError(
+            "Publication refuses disposable metadata: " + ", ".join(f"`{item}`" for item in blocked),
+            affected_paths=blocked,
         )

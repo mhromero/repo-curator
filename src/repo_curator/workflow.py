@@ -840,6 +840,13 @@ def mark_ready_for_final_review(run: RepositoryRun) -> None:
     _transition(run, WorkflowState.READY_FOR_FINAL_REVIEW, "validation_succeeded")
 
 
+def reopen_validation_after_publication_hygiene(run: RepositoryRun) -> None:
+    """Revalidate when publication observes new local hygiene after final review."""
+    _require_state(run, WorkflowState.READY_FOR_FINAL_REVIEW)
+    run.final_review = None
+    _transition(run, WorkflowState.VALIDATING, "publication_hygiene_changed")
+
+
 def approve_final_review(run: RepositoryRun, notes: str | None = None) -> None:
     _require_state(run, WorkflowState.READY_FOR_FINAL_REVIEW)
     run.final_review = FinalReview(approved=True, notes=notes)

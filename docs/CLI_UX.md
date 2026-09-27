@@ -55,6 +55,9 @@ use should not require knowledge of the internal state machine.
   when a new repository will be created and that pushes are non-force. For a
   folder without Git metadata, explicitly show the planned Git initialization
   branch and initial-commit files before asking for that approval.
+- If final publication detects a missing `.gitignore` or disposable metadata that
+  appeared after validation, return to the existing validation remediation flow
+  and list the exact affected paths; do not fail the guided command.
 - Preserve an existing remote's HTTPS or SSH URL. For a newly created repository,
   use the authenticated GitHub CLI `git_protocol` preference and show it in final
   review. If an approved HTTPS push has a transport-style failure, first verify the

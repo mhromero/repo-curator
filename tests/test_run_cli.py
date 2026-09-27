@@ -20,6 +20,7 @@ from repo_curator.cli import (
     _review_missing_gitignore,
     _review_tracked_junk,
     _retire_resolved_local_naming_concerns,
+    _return_to_hygiene_validation,
     _separate_operations,
     _offer_plan_miss_escalation,
     app,
@@ -31,7 +32,12 @@ from repo_curator.models import (
     TriageResult,
 )
 from repo_curator.routing import CapabilityCostClass, ReasoningEffort, RoutingDecision, WorkDepth
-from repo_curator.publication import PublicationInputRequired, PublicationPlan, PublicationPushError
+from repo_curator.publication import (
+    PublicationHygieneError,
+    PublicationInputRequired,
+    PublicationPlan,
+    PublicationPushError,
+)
 from repo_curator.scanner import scan_repository
 from repo_curator.run_store import RunStore
 from repo_curator.workflow import (
@@ -154,6 +160,35 @@ def test_final_review_can_apply_a_human_confirmed_plan_miss_escalation(
     assert saved_run.routing_decision.reasoning_effort == ReasoningEffort.HIGH
     assert len(saved_run.escalations) == 1
     assert "Suggested worker escalation" in capsys.readouterr().out
+
+
+def test_publication_hygiene_failure_returns_to_validation_remediation(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    run = RepositoryRun(
+        id="8" * 32,
+        repository_profile=scan_repository(tmp_path).repository_profile,
+        state=WorkflowState.READY_FOR_FINAL_REVIEW,
+    )
+    store = RunStore(tmp_path / "state")
+    store.create(run)
+
+    _return_to_hygiene_validation(
+        store,
+        run,
+        PublicationHygieneError(
+            "Publication refuses disposable metadata.",
+            affected_paths=[".DS_Store", "labs/.DS_Store"],
+        ),
+    )
+
+    saved_run = store.load(run.id)
+    assert saved_run.state == WorkflowState.VALIDATING
+    assert saved_run.transitions[-1].action == "publication_hygiene_changed"
+    output = capsys.readouterr().out
+    assert "Publication hygiene changed" in output
+    assert "- labs/.DS_Store" in output
 
 
 def test_required_fact_prompt_separates_question_from_response_field(monkeypatch, capsys) -> None:

@@ -22,6 +22,7 @@ from .evaluation import (
 from .publication import (
     GitHubCliPublisher,
     PublicationError,
+    PublicationHygieneError,
     PublicationInputRequired,
     PublicationPushError,
     format_github_description,
@@ -72,6 +73,7 @@ from .workflow import (
     record_repository_rename_decision,
     record_validation_artifact_decision,
     record_validation_report,
+    reopen_validation_after_publication_hygiene,
     finish_publication,
     reject_final_review,
     request_final_review_changes,
@@ -1125,6 +1127,9 @@ def _drive_guided_workflow(
             publisher = GitHubCliPublisher(gh_bin=gh_bin)
             try:
                 plan = _prepare_publication(run, publisher)
+            except PublicationHygieneError as error:
+                _return_to_hygiene_validation(store, run, error)
+                continue
             except PublicationInputRequired as error:
                 if error.key != "github_visibility" or not request_github_visibility(run):
                     raise
@@ -1365,6 +1370,9 @@ def _review_and_publish(store: RunStore, run, publisher: GitHubCliPublisher, pla
         typer.echo("Final approval was already recorded. Retrying publication without changing the review decision.")
     try:
         _execute_publication(store, run, publisher)
+    except PublicationHygieneError as error:
+        _return_to_hygiene_validation(store, run, error)
+        return True
     except PublicationPushError as error:
         typer.echo("GitHub did not confirm the push.")
         typer.echo(f"Push detail: {error.detail}")
@@ -1388,6 +1396,16 @@ def _review_and_publish(store: RunStore, run, publisher: GitHubCliPublisher, pla
     typer.echo(f"Published {result.repository} branch {result.branch} at {result.commit_sha}.")
     typer.echo("State: FINISHED")
     return False
+
+
+def _return_to_hygiene_validation(store: RunStore, run, error: PublicationHygieneError) -> None:
+    """Return a changed worktree to the existing validation remediation flow."""
+    _print_report_heading("Publication hygiene changed")
+    typer.echo("Files changed after validation and must be reviewed before publication.")
+    for path in error.affected_paths:
+        typer.echo(f"- {path}")
+    reopen_validation_after_publication_hygiene(run)
+    store.save(run)
 
 
 def _offer_plan_miss_escalation(store: RunStore, run, notes: str) -> None:

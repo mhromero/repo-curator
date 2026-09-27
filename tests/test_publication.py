@@ -8,6 +8,7 @@ import pytest
 from repo_curator.publication import (
     GitHubCliPublisher,
     PublicationError,
+    PublicationHygieneError,
     PublicationInputRequired,
     PublicationPushError,
     format_github_description,
@@ -63,7 +64,7 @@ def test_publisher_refuses_disposable_metadata_before_git_or_github_commands(tmp
     (tmp_path / ".DS_Store").write_text("metadata", encoding="utf-8")
     runner = FakeRunner({})
 
-    with pytest.raises(PublicationError, match="disposable metadata.*`.DS_Store`"):
+    with pytest.raises(PublicationHygieneError, match="disposable metadata.*`.DS_Store`") as error:
         GitHubCliPublisher(runner=runner).prepare(
             tmp_path,
             expected_name="ucm-sistemas-autonomos",
@@ -71,6 +72,7 @@ def test_publisher_refuses_disposable_metadata_before_git_or_github_commands(tmp
         )
 
     assert runner.calls == []
+    assert error.value.affected_paths == [".DS_Store"]
 
 
 def test_publisher_refuses_to_publish_without_a_reviewed_gitignore(tmp_path: Path) -> None:
