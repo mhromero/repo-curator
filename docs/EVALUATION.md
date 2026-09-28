@@ -4,9 +4,28 @@ Repo Curator should be evaluated as a workflow, not only as a Python program.
 
 The current implementation includes the static scanner, TypeSafe/Jev triage, deterministic R5 run-state transitions, deterministic R6 route/escalation policy, packaged fake-tested R7/R8 Codex CLI inspection/edit prompts and adapters, deterministic validation, and final GitHub publication planning and execution behind a fake-tested CLI adapter.
 
+## Development dogfooding
+
+Repo Curator was developed through iterative testing on real university
+coursework repositories. Observed failures informed prompt and workflow changes.
+That dogfooding is development methodology, not an independent evaluation or a
+reliability claim. The separate evaluation set is being developed to assess
+behavior on previously unseen repositories.
+
 ## Unit tests
 
-The current suite has one hundred and seven deterministic tests covering scanner inventory and language signals, ignored directories, non-execution, R3 evidence, summary redaction and budgeting, local Git metadata, symlinks, TypeSafe question construction, provider response validation, mocked CLI output, the guided path-based user journey, inspection continuation and plan revision, guided edit review and retry behavior, deterministic validation outcomes, naming confirmation, direct local-rename approval from a blocked naming mismatch, final GitHub review, final-review revision resumption, conservative publication planning, configured Git transport, post-push remote confirmation, explicit SSH retry, explicit owned-remote rename, plain-folder Git initialization, non-force push behavior, and blocked-validation notes, R2 approval boundaries and rejection explanations, human-readable Git status, consistently spaced report rendering, persisted prompt rendering, sanitized evaluation export/comparison, persistence, R6 work-depth/model/effort routing, model configuration, escalation policy, and Codex CLI command/output/failure handling. It uses fake Codex and GitHub command runners and makes no paid TypeSafe or Codex calls or real GitHub mutations.
+The deterministic suite covers scanner inventory and language signals, ignored
+directories, non-execution, R3 evidence, summary redaction and budgeting, local
+Git metadata, symlinks, TypeSafe question construction, provider response
+validation, mocked CLI output, the guided path-based user journey, inspection
+continuation and plan revision, guided edit review and retry behavior,
+deterministic validation outcomes, naming confirmation, conservative publication
+planning, Git transport/retry behavior, plain-folder Git initialization,
+non-force push behavior, R2 authority, readable reporting, prompt rendering,
+sanitized evaluation export/comparison, persistence, deterministic routing and
+escalation policy, and Codex CLI command/output/failure handling. It uses fake
+Codex and GitHub command runners and makes no paid TypeSafe or Codex calls or
+real GitHub mutations.
 
 Future unit-test coverage should include:
 
@@ -28,9 +47,10 @@ The first evaluation phase collects evidence; it does not tune R4 clarification
 handling or the deterministic R6 router. The normal workflow remains the
 execution policy. The evaluator exports a sanitized projection of a real run into
 `evaluations/results/`, then records qualitative human judgments in that result.
-The version-controlled case/result layout, command examples, exact automatic
-fields, human fields, privacy exclusions, and telemetry gaps are documented in
-[`evaluations/README.md`](../evaluations/README.md).
+Those real-repository records remain local by default and require separate review
+before publication. The anonymous public template, command examples, exact
+automatic fields, human fields, privacy exclusions, and telemetry gaps are
+documented in [`evaluations/README.md`](../evaluations/README.md).
 
 This phase is intended to observe R4 triage choices and clarification signals, R6
 route/model/effort selection, human intervention usefulness, preservation of

@@ -1,21 +1,22 @@
 # Real-repository evaluation
 
-This directory holds small, sanitized, version-controlled evaluation metadata and
-results. It is not a test suite, a benchmark service, or a place to copy target
-repositories.
+This directory holds the anonymous, version-controlled evaluation-case template
+and instructions. Real-repository cases and results are ignored locally by
+default, even after export. They are not a test suite, a benchmark service, or a
+place to copy target repositories.
 
 ## Layout
 
 ```text
 evaluations/
-  cases/     # sanitized case metadata; one JSON file per repository evaluation
-  results/   # sanitized exports, then human qualitative judgments
+  cases/     # anonymous public template; real local case metadata is ignored
+  results/   # local sanitized exports and human qualitative judgments (ignored)
 ```
 
-Copy `cases/example-student-coursework.json` to make a case. Its `case_id` is a
-safe label, not a repository name or path. Set
+Copy `cases/example-student-coursework.json` to make a local case. Its `case_id`
+is a safe label, not a repository name or path. Set
 `consent_to_publish_sanitized_result` only when the evaluator is permitted to
-commit or share the result.
+commit or share the result after a separate review.
 
 For example:
 
@@ -43,7 +44,8 @@ Run the normal guided workflow on a real repository. It continues to use the
 existing R6 router; evaluation does not alter routing, Jev questions, worker
 prompts, or approval behavior.
 
-After a run reaches a useful stopping point, export only selected evidence:
+After a run reaches a useful stopping point, export only selected evidence to a
+local ignored file:
 
 ```sh
 uv run --frozen repo-curator evaluation export <run-id> \

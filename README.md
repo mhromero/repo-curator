@@ -1,243 +1,163 @@
 # Repo Curator
 
-Repo Curator is intended to help prepare older software repositories for portfolio publication while preserving original work and keeping consequential decisions with the human.
+Repo Curator is a guided, human-in-the-loop CLI for preparing existing software
+repositories for GitHub portfolio publication. It helps inspect older projects,
+propose focused cleanup, preserve authorship and academic context, validate
+changes, and publish only after explicit final approval.
 
-## Current status
+It is designed for coursework and other repositories where honest presentation
+matters more than turning historical work into polished production software.
 
-Implemented features are a local, read-only scanner, TypeSafe/Jev structured triage, persisted human-review run state, deterministic routing, and a Codex inspection/edit worker. `repo-curator scan <path>` returns a detailed `RepositoryProfile` and a redacted `TriageSummary`. `repo-curator triage <path>` scans the target, sends that summary to TypeSafe, and returns typed judgments about repository extent, completeness, portfolio-preparation effort, composition, organization, README and reproducibility expectations, technical domain, and possible human clarification.
+## How it works
 
-The scanner runs offline and does not execute target code, install dependencies, or modify the target. The triage summary contains a budgeted relative repository outline: directories, file metadata, special files, README excerpts, configuration, entry points, imports, artifacts, and risk findings. It excludes source-file bodies, secret and local-path values, package-script command bodies, dependency contents, and remote URLs. Review the JSON before sharing because it includes repository and file names.
+```mermaid
+flowchart LR
+    scan[Scan locally<br/>read-only] --> triage[Structured triage<br/>TypeSafe / Jev]
+    triage --> human[Human classification<br/>and facts]
+    human --> route[Deterministic route]
+    route --> inspect[Codex inspection<br/>read-only]
+    inspect --> plan[Human plan and R2<br/>approval]
+    plan --> edit[Same Codex context<br/>approved edits]
+    edit --> review[Human edit review]
+    review --> validate[Deterministic validation]
+    validate --> final[Human GitHub review]
+    final --> publish[Commit and non-force push]
 
-Triage identifies hypotheses; it does not authorize edits, infer personal facts, select a Codex model, or validate the repository. Its R4 `Noul` clarification probabilities are advisory signals shown to the human. They do not currently create `FactRequest` records. A/B/C portfolio classification is the only mandatory initial human input; the human may also record confirmed facts for suggested topics. Those facts are the downstream source of truth.
-
-R5 persists a run and applies explicit human input and approval gates. R6 records the deterministic model and reasoning-effort route. R7 launches read-only Codex inspection; R8 resumes its thread for human-approved, R2-limited editing, records a structured edit report, runs bounded deterministic validation, and publishes only after final human approval.
-
-## Installation
-
-Requirements: Python 3.11 or newer and [`uv`](https://docs.astral.sh/uv/). Codex inspection and approved editing require the local Codex CLI authenticated with `codex login`. Final publication requires the authenticated [GitHub CLI](https://cli.github.com/) (`gh auth login`).
-
-From a checkout:
-
-```sh
-uv sync --dev
+    inspect -. missing fact .-> human
+    plan -. revise .-> inspect
+    review -. revise .-> edit
+    validate -. blocked issue .-> review
 ```
 
-## Usage
-
-Scan a repository, replacing the example path with the directory to inspect:
-
-```sh
-uv run --frozen repo-curator scan /path/to/repository
-```
-
-The default output is a concise human-readable summary. Add `--json` to print a JSON object with `repository_profile` and `triage_summary`:
+The workflow deliberately separates evidence collection, model judgment,
+generative editing, deterministic checks, and human authority. The normal entry
+point is one command:
 
 ```sh
-uv run --frozen repo-curator scan /path/to/repository --json
-```
-
-Git metadata is collected when Git is available and the directory belongs to a local Git repository. The scanner does not fetch remote data; it cannot establish whether a remote is a fork.
-
-### TypeSafe triage
-
-Set a TypeSafe API key in your shell, then run triage. Do not add the key to repository files.
-
-```sh
-export TYPESAFE_API_KEY='your-key-here'
-uv run --frozen repo-curator triage /path/to/repository
-```
-
-Set `TYPESAFE_DEFAULT_MODEL` or pass `--model` to choose an available TypeSafe model or alias:
-
-```sh
-export TYPESAFE_DEFAULT_MODEL='your-model-or-alias'
-uv run --frozen repo-curator triage /path/to/repository --json
-uv run --frozen repo-curator triage /path/to/repository --model 'your-model-or-alias'
-```
-
-Triage makes a paid external API request. Its JSON result contains the submitted summary, typed choices with confidence/probabilities, clarification probabilities, and reported token usage.
-
-### Human-review run
-
-The normal command starts or resumes curation for a repository. It persists state
-outside the target repository at `~/.repo-curator/runs/<run-id>/run.json` by
-default. Use `--state-root` to select a different local state directory.
-
-```sh
-export TYPESAFE_API_KEY='your-key-here'
 uv run --frozen repo-curator run /path/to/repository
 ```
 
-The guided command prompts for required A/B/C classification and worker-requested
-facts, routes, launches read-only inspection, presents the inspection plan and
-R2 approvals, then resumes the same Codex thread for the approved edit scope.
-Inspection assesses organization and visible local references before proposing
-any structural cleanup. The guided flow shows the structured edit report and Git
-change summary, then asks the human to
-approve the edits or request a revision. Approval runs deterministic validation;
-rejection resumes the same worker context with the requested changes. Re-running
-the same command resumes the most recently updated unfinished run for that repository.
+It starts a new run or resumes the latest unfinished run for that directory. Run
+state is stored outside the target repository by default at
+`~/.repo-curator/runs/`.
 
-When declining an R2 approval request, the guided prompt accepts an optional
-explanation. The explanation is persisted with the decision and is supplied to
-Codex when it later resumes an edit iteration. Declining one R2 action keeps the
-approved inspection plan and asks the worker to omit that action; declining the
-inspection plan itself requests a revised plan.
+## Requirements
 
-Validation asks the human to enter the exact repository name required by the R1
-`uni-year-class` convention. Repo Curator never invents the university, year, or
-class value. When that name differs from the local directory, the guided flow
-shows a separate approval request before moving the local directory; it never
-renames a remote repository during validation. A malformed name, a declined rename, or another
-failed required check is `BLOCKED` for human action. A declined naming rename
-leaves the folder unchanged and accepts an optional persisted human note.
+- Python 3.11 or newer
+- [`uv`](https://docs.astral.sh/uv/)
+- A `TYPESAFE_API_KEY` for guided triage
+- The local Codex CLI, authenticated with `codex login`, for inspection and
+  approved edits
+- Git for Git-backed repositories or approved initial Git setup
+- The [GitHub CLI](https://cli.github.com/) authenticated with `gh auth login`
+  only when you choose to publish
 
-The deterministic checks rescan hygiene, verify README and `.gitignore` evidence,
-parse Python and notebook files without executing them, and run existing Python
-tests when present. They do not install dependencies, use a network, commit, push,
-or publish. `VERIFIED` and `PARTIALLY_VERIFIED` reach
-`READY_FOR_FINAL_REVIEW`; `BLOCKED` remains stopped for human action. At final
-review, the guided command shows the validation outcome, unresolved concerns,
-GitHub target, visibility, branch, Git transport, and exact Git changes. Approval commits those
-reviewed changes and performs a normal non-force push. It creates a missing
-repository only for the authenticated GitHub user. For a plain local folder, the
-same final review explicitly shows that it will initialize Git on `main` and lists
-the files for its initial commit; no `git init` occurs before approval. Repo
-Curator never renames or retargets an existing remote without showing it in final
-review, and refuses forks or
-foreign/organization-owned remotes.
+The scanner works offline and does not need API credentials. Triage is an
+external, paid TypeSafe request. A guided run may require several human answers
+and approvals; it does not run unattended.
 
-Existing GitHub remotes retain their configured HTTPS or SSH URL. New repositories
-use the authenticated GitHub CLI's `git_protocol` preference; set it with
-`gh config set git_protocol ssh --host github.com` when SSH is preferred. If an
-approved HTTPS push ends with a transport-style failure, Repo Curator checks
-whether the reviewed branch actually reached GitHub. When it did not and local SSH
-authentication is available, the guided CLI offers one explicit retry over SSH to
-the same reviewed repository and branch.
+## Install and first run
 
-When supported by repository evidence, the editing worker also returns a concise
-factual GitHub About description. Final review shows the exact description, and
-approval applies it; Repo Curator does not manage topics or a website URL.
-
-Declining final publication with a requested repository change resumes the same
-Codex editing context. The guided prompt can also replace the confirmed R1
-repository name: when feedback contains one distinct R1-shaped name, it asks for
-confirmation rather than requiring the name to be entered again. A blank final
-decline simply stops publication at `READY_FOR_FINAL_REVIEW`.
-
-Use `run start`, `run continue`, and the phase commands when you need separate,
-scriptable, debugging, or recovery steps. For example:
+From a checkout of this repository:
 
 ```sh
-uv run --frozen repo-curator run input <run-id>
-uv run --frozen repo-curator run show <run-id>
-uv run --frozen repo-curator run final approve <run-id>
-uv run --frozen repo-curator run final publish <run-id>
+uv sync --dev
+uv run --frozen repo-curator --help
 ```
 
-For an existing run paused for worker-requested facts, continue the same interactive flow with:
+Try the reproducible offline scanner demo first:
 
 ```sh
-uv run --frozen repo-curator run continue <run-id>
+uv run --frozen repo-curator scan examples/synthetic-coursework
 ```
 
-It collects all pending answers and resumes the saved Codex thread. `run input`, `run classify`, and `run answer` remain available for scripting or one-off changes. Use `not applicable` when that is the human answer:
+For a real guided curation run, keep credentials in your shell rather than in a
+repository file:
 
 ```sh
-uv run --frozen repo-curator run answer <run-id> authorship 'Independent work.'
-uv run --frozen repo-curator run facts <run-id>
-```
-
-Inspection may introduce concrete `FactRequest` records. `run approval`, `run edit`, and `run final` enforce review-state boundaries. Validation creates the explicit `repository_naming` fact request, then advances `VERIFIED` and `PARTIALLY_VERIFIED` runs from `VALIDATING` to `READY_FOR_FINAL_REVIEW`; `BLOCKED` requires human action. Automatic conversion of R4 clarification signals into `FactRequest` records is deliberately deferred until real-repository evaluation data supports a policy. `FINISHED` requires final approval followed by a successful recorded publication.
-
-### Deterministic routing
-
-After classification, route the persisted run without making another API request or launching a worker:
-
-```sh
-uv run --frozen repo-curator run route <run-id>
-```
-
-The route records work depth, a configuration-neutral cost class, resolved model family/provider model, and reasoning effort. A/B/C plus R4 project extent determine work depth; R4 cleanup effort determines the initial cost class and effort. Repository age, size, file count, and importance alone do not select a stronger configuration.
-
-The default mapping is `gpt-5.6-luna` for economy routes, `gpt-5.6-terra` for enhanced routes, and `gpt-5.6-sol` only for future approved escalations. Model identifiers remain configurable with `REPO_CURATOR_LUNA_MODEL`, `REPO_CURATOR_TERRA_MODEL`, and `REPO_CURATOR_SOL_MODEL`. Each configured family declares supported effort levels; the current defaults support `low`, `medium`, `high`, and `xhigh`.
-
-### Codex inspection
-
-After routing, authenticate Codex once and launch the read-only inspection worker:
-
-```sh
+export TYPESAFE_API_KEY='your-key-here'
 codex login
-uv run --frozen repo-curator run inspection execute <run-id>
+uv run --frozen repo-curator run /path/to/repository
 ```
 
-The command uses the persisted R6 model and reasoning effort, sends a compact R3–R6 context plus confirmed human facts, and requires a schema-valid `InspectionReport`. It prints worker route, thread, and inspection status, then normally ends in `WAITING_INSPECTION_REVIEW` (or `WAITING_FOR_INPUT` when the report requests required facts). Use `run continue <run-id>` to answer those facts and resume inspection. It does not modify the target repository. A failed worker remains in `INSPECTING` with concise failure metadata and can be retried with the same command.
+The command scans, collects your A/B/C portfolio classification, performs
+read-only inspection, asks for approval before meaningful changes, resumes the
+same worker context for approved edits, validates, and presents a final
+publication review. It can work with a plain local folder: Git initialization,
+the initial commit, GitHub repository creation, and push are all shown and
+require that final approval.
 
-### Approved editing
-
-After reviewing and approving an inspection plan, resume the same worker thread:
+To publish after a run reaches final review, authenticate GitHub first:
 
 ```sh
-uv run --frozen repo-curator run inspection approve <run-id>
-uv run --frozen repo-curator run continue <run-id>
+gh auth login
 ```
 
-The worker receives the approved inspection plan, confirmed facts, and only R2 requests that were explicitly approved. It runs with Codex `workspace-write` sandbox access, may make safe changes within that scope, and must return a schema-valid `EditReport`. The run then stops at `WAITING_EDIT_REVIEW`; no validation runs yet. If the worker discovers a new R2 action, it records an approval request and stops in `WAITING_APPROVAL`. Decide it with `run approval decide`, then use `run continue <run-id>` again. `run edit execute <run-id>` is available for scriptable execution.
+See the [demo guide](docs/DEMO.md) for the captured offline run and the full
+prerequisite boundary. See [CLI UX](docs/CLI_UX.md) for the interaction model.
 
-The current runtime is the locally authenticated Codex CLI. An OpenAI Agents SDK adapter remains a possible future backend, but it is not installed or selected because it requires separately billed API Platform credentials, which are not configured for this project.
+## Engineering choices
 
-### Worker prompt assets
+- **One persistent worker context:** inspection, approved editing, and later
+  diagnosis reuse repository understanding instead of repeatedly rebuilding it.
+- **Explicit authority:** the worker can propose changes; the human supplies
+  personal facts and approves meaningful deletions, restructuring, edits, and
+  publication.
+- **Deterministic controls around models:** routing, state transitions,
+  validation, Git/GitHub safeguards, and report schemas are ordinary Python and
+  independently tested.
+- **Privacy-conscious triage and evaluation:** triage receives a bounded,
+  redacted repository summary. Evaluation exports omit source content, paths,
+  credentials, remote identities, and worker conversation history.
 
-The canonical worker instructions are the packaged Markdown files in
-`src/repo_curator/prompts/`. `CodexCliWorker` renders exactly one structured JSON
-context block into the phase template; the edit phase also embeds the packaged
-README quality guide as adaptable guidance, retaining applicable sections rather
-than enforcing a rigid document shape. Approved README work produces English
-prose while preserving original paths, commands, proper names, and verified facts.
-It does not load prompts from the target
-repository or ambient Codex configuration. Update an asset and its rendering tests
-when changing worker behavior. Python remains responsible for sandbox selection,
-schemas, workflow transitions, approval gates, and Git/GitHub safeguards.
+More detail is in the [architecture](docs/ARCHITECTURE.md),
+[workflow](docs/WORKFLOW.md), and [requirements](docs/REQUIREMENTS.md).
 
-### Real-repository evaluation
+## Evaluation and development dogfooding
 
-Evaluations are separate from unit tests. After a real run reaches a useful
-stopping point, export a sanitized result using a version-controlled evaluation
-case:
+Repo Curator was developed through iterative testing on real university
+coursework repositories. Observed failures informed changes to its prompts and
+workflow. This dogfooding is a development methodology, not an independent
+evaluation.
 
-```sh
-uv run --frozen repo-curator evaluation export <run-id> \
-  evaluations/cases/my-case.json \
-  evaluations/results/my-case-run-01.json
-```
+A separate evaluation set is being developed to assess behavior on previously
+unseen repositories. The public repository includes an [anonymous case template
+and evaluation instructions](evaluations/README.md) plus an [evaluation
+methodology](docs/EVALUATION.md). It does not yet publish independent evaluation
+results or make aggregate quality or reliability claims.
 
-The export does not invoke providers or modify the run. It excludes target paths,
-file names, repository content, fact values, notes, worker transcripts, thread
-IDs, remote identities, and commit IDs. Complete its qualitative human judgments
-before sharing it, then compare multiple results with
-`repo-curator evaluation compare ... --json`. See
-[the evaluation guide](evaluations/README.md) for the case schema, recorded
-evidence, and current telemetry gaps.
+## Limitations and safety boundaries
+
+- Repo Curator does not guarantee that a repository is correct, secure, or ready
+  for publication. Review every plan, diff, validation concern, and final GitHub
+  target yourself.
+- It never invents authorship, academic context, licensing, or results. Missing
+  evidence becomes a human question or an unresolved concern.
+- It does not automatically publish to forks, organization-owned repositories,
+  or foreign-owned remotes, and it never force-pushes or rewrites history.
+- Validation is intentionally bounded and proportional. It may not execute every
+  project, install dependencies, or prove behavior beyond available evidence.
+- Current evaluation exports retain limited per-attempt telemetry and no provider
+  billing cost. They cannot independently establish preservation of student work.
+- This repository has no license file. Do not assume permission to reuse it until
+  its maintainer chooses one.
+
+## Documentation
+
+- [Architecture](docs/ARCHITECTURE.md)
+- [Workflow and state model](docs/WORKFLOW.md)
+- [Product requirements](docs/REQUIREMENTS.md)
+- [CLI user experience](docs/CLI_UX.md)
+- [Demo guide](docs/DEMO.md)
+- [Evaluation methodology](docs/EVALUATION.md)
+- [Evaluation instructions and anonymous case template](evaluations/README.md)
 
 ## Development
-
-Install the development dependencies, then run the test suite:
 
 ```sh
 uv sync --dev
 uv run --frozen pytest -q
 ```
 
-Smoke-test the scanner against this checkout with `uv run --frozen repo-curator scan .`.
-
-## Planned direction
-
-The current CLI completes the single-repository workflow through final publication. Future work may improve supported organization ownership paths and post-publication review.
-
-## Documentation
-
-- [Architecture](docs/ARCHITECTURE.md)
-- [Planned workflow](docs/WORKFLOW.md)
-- [Requirements](docs/REQUIREMENTS.md)
-- [Evaluation strategy](docs/EVALUATION.md)
-- [Codex development instructions](AGENTS.md)
+The test suite uses fake providers and command runners; it does not spend
+TypeSafe or Codex allowance or modify real GitHub repositories.

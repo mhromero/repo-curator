@@ -19,6 +19,13 @@ __pycache__/
 !/.env.example
 .DS_Store
 
+# Real-repository evaluation records remain local until they have been reviewed
+# for publication separately. Keep the anonymous public case template and the
+# empty results directory tracked.
+/evaluations/cases/*.json
+!/evaluations/cases/example-student-coursework.json
+/evaluations/results/*.json
+
 # Python build and coverage output
 /build/
 /dist/

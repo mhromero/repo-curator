@@ -1,7 +1,7 @@
 [project]
 name = "repo-curator"
 version = "0.1.0"
-description = "Add your description here"
+description = "Human-in-the-loop preparation of existing repositories for GitHub publication"
 readme = "README.md"
 authors = [
     { name = "María Romero Huertas", email = "mrhy2003@gmail.com" }
