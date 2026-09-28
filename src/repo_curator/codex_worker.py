@@ -106,6 +106,7 @@ class CodexCliWorker:
                         stdout=subprocess.PIPE,
                         stderr=stderr_file,
                         text=True,
+                        errors="replace",
                         bufsize=1,
                     )
                     assert process.stdout is not None
@@ -122,7 +123,7 @@ class CodexCliWorker:
                 command,
                 return_code,
                 "".join(stdout_lines),
-                stderr_path.read_text(encoding="utf-8"),
+                stderr_path.read_text(encoding="utf-8", errors="replace"),
             )
             events = _events_from_jsonl(completed.stdout)
             thread_id = _thread_id(events) or resume_thread_id

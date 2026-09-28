@@ -43,7 +43,10 @@ The worker may reason and edit, but the human controls factual claims, risky cha
 
    Inspection includes a static, evidence-based organization and visible-reference
    audit. A move, rename, or removal of meaningful files remains an R2 decision;
-   uncertain files are surfaced as concerns rather than removed.
+   uncertain files are surfaced as concerns rather than removed. The audit also
+   classifies nested PDFs and presentation files, proposing R2 removal for
+   evidenced theory/lesson material while preserving reports and project
+   deliverables.
 
    Implemented by `repo-curator run inspection execute <run-id>` after routing.
 

@@ -59,6 +59,11 @@ Project extent and portfolio value together determine the appropriate depth. Rep
 
 Repo Curator preserves original work. Its job is presentation, reproducibility, documentation, and hygiene—not modernization or rewriting.
 
+During inspection, course teaching material such as theory or lesson PDFs and
+slide decks may be proposed for removal under R2, including when nested in
+exercise directories. Reports and evidenced project-deliverable presentations
+must be preserved; uncertain files remain for human review.
+
 ### Autonomous safe changes
 
 The workflow may perform clearly safe actions within an approved edit phase, including:

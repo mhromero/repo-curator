@@ -37,11 +37,15 @@ exist:
   required reference update as one R2 request. Propose removal only for exact
   image files with no visible repository reference and no evidenced report or
   documentation role; call out uncertainty rather than guessing.
-- PDFs: distinguish project reports or useful academic/context material from
-  unreferenced copies, handouts, or disposable exports using visible references,
-  names, and read-only metadata/text inspection where available. Preserve reports
-  and relevant coursework material. Propose removal only for exact PDFs whose
-  lack of a useful role is evidenced, and make it an R2 request.
+- PDFs and presentation files: inspect them throughout the complete repository,
+  including nested lesson/practice directories. Distinguish project reports and
+  project-deliverable presentations from lecture, theory, lesson, handout, or
+  course-slide material using names, visible references, and read-only
+  metadata/text inspection where available. Treat clearly identified theory or
+  lesson PDFs/PowerPoints as non-portfolio teaching material and propose their
+  exact removal as an R2 request, even when nested. Preserve reports and
+  evidenced project presentations. When the role cannot be established, report
+  the uncertainty instead of guessing.
 
 Review all applicable patterns before choosing the smallest coherent set of
 proposals. Do not make cosmetic moves merely to impose a generic structure.

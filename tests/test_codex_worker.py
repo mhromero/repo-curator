@@ -76,6 +76,19 @@ def test_codex_worker_persists_thread_information_on_failure(
     assert "simulated failure" in str(error.value)
 
 
+def test_codex_worker_tolerates_non_utf8_diagnostics_on_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = _inspection_request(tmp_path)
+    executable = _fake_codex(tmp_path)
+    monkeypatch.setenv("FAKE_CODEX_STATUS", "1")
+    monkeypatch.setenv("FAKE_CODEX_BINARY_STDERR", "1")
+
+    with pytest.raises(WorkerRuntimeError, match="simulated failure"):
+        CodexCliWorker(str(executable)).inspect(request)
+
+
 def test_codex_worker_resumes_existing_thread(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -245,6 +258,8 @@ if arguments_path:
 output_path = Path(arguments[arguments.index("--output-last-message") + 1])
 if os.environ.get("FAKE_CODEX_STATUS") != "1":
     output_path.write_text(os.environ.get("FAKE_CODEX_REPORT", '{"summary": "Inspection complete."}'), encoding="utf-8")
+if os.environ.get("FAKE_CODEX_BINARY_STDERR") == "1":
+    sys.stderr.buffer.write(b"diagnostic: \\xc3\\n")
 print(json.dumps({"type": "thread.started", "thread_id": "thread-123"}))
 print(json.dumps({"type": "turn.completed", "usage": {"input_tokens": 12, "cached_input_tokens": 5, "output_tokens": 3, "reasoning_output_tokens": 4}}))
 if os.environ.get("FAKE_CODEX_STATUS") == "1":

@@ -42,7 +42,10 @@ def test_inspection_prompt_requires_a_static_organization_and_reference_audit() 
     assert "do not ask a redundant question" in prompt
     assert "Nested `example`, `examples`, `sample`, `demo`" in prompt
     assert "scattered assets" in prompt
-    assert "PDFs: distinguish project reports" in prompt
+    assert "PDFs and presentation files" in prompt
+    assert "including nested lesson/practice directories" in prompt
+    assert "theory or" in prompt
+    assert "lesson PDFs/PowerPoints" in prompt
     assert "all applicable patterns" in prompt
 
 
