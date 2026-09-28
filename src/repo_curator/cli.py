@@ -206,6 +206,10 @@ def scan(
         f"{summary.local_path_risk_count} local-path candidate(s)"
     )
     typer.echo(f"Tracked junk candidates: {summary.tracked_junk_count}")
+    if profile.evidence.disposable_paths:
+        typer.echo("Disposable file candidates:")
+        for disposable_path in profile.evidence.disposable_paths:
+            typer.echo(f"- {disposable_path}")
     typer.echo(
         "Ignored directories: "
         + (", ".join(profile.ignored_directories) or "none")

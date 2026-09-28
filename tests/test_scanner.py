@@ -92,6 +92,20 @@ def test_scan_cli_exposes_explicit_scan_subcommand(tmp_path: Path) -> None:
     assert output["triage_summary"]["directory_name"] == "sample-project"
 
 
+def test_scan_cli_lists_disposable_file_candidates(tmp_path: Path) -> None:
+    repository = tmp_path / "sample-project"
+    repository.mkdir()
+    (repository / ".DS_Store").write_bytes(b"metadata")
+    (repository / "editor.swp").write_text("temporary", encoding="utf-8")
+
+    result = CliRunner().invoke(app, ["scan", str(repository)])
+
+    assert result.exit_code == 0
+    assert "Disposable file candidates:" in result.stdout
+    assert "- .DS_Store" in result.stdout
+    assert "- editor.swp" in result.stdout
+
+
 def test_r3_profile_collects_evidence_and_builds_redacted_triage_summary(
     tmp_path: Path,
 ) -> None:

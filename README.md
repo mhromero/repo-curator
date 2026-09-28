@@ -11,21 +11,19 @@ matters more than turning historical work into polished production software.
 ## How it works
 
 ```mermaid
-flowchart LR
-    scan[Scan locally<br/>read-only] --> triage[Structured triage<br/>TypeSafe / Jev]
-    triage --> human[Human classification<br/>and facts]
-    human --> route[Deterministic route]
-    route --> inspect[Codex inspection<br/>read-only]
-    inspect --> plan[Human plan and R2<br/>approval]
-    plan --> edit[Same Codex context<br/>approved edits]
-    edit --> review[Human edit review]
-    review --> validate[Deterministic validation]
-    validate --> final[Human GitHub review]
-    final --> publish[Commit and non-force push]
+flowchart TD
+    start[Run Repo Curator] --> triage[1. Local scan and structured triage]
+    triage --> inspect[2. Read-only repository inspection]
+    inspect --> plan[3. Human plan and R2 approval]
+    plan --> edit[4. Approved edits in the same Codex context]
+    edit --> review[5. Human review of the actual diff]
+    review --> validate[6. Deterministic validation]
+    validate --> publish[7. Final human review, then GitHub publication]
 
-    inspect -. missing fact .-> human
-    plan -. revise .-> inspect
-    review -. revise .-> edit
+    inspect -. missing fact .-> facts[Human facts]
+    facts --> inspect
+    plan -. requested revision .-> inspect
+    review -. requested revision .-> edit
     validate -. blocked issue .-> review
 ```
 
@@ -45,7 +43,7 @@ state is stored outside the target repository by default at
 
 - Python 3.11 or newer
 - [`uv`](https://docs.astral.sh/uv/)
-- A `TYPESAFE_API_KEY` for guided triage
+- A [`TypeSafe`](https://docs.typesafe.ai/) `TYPESAFE_API_KEY` for guided triage
 - The local Codex CLI, authenticated with `codex login`, for inspection and
   approved edits
 - Git for Git-backed repositories or approved initial Git setup
@@ -55,6 +53,19 @@ state is stored outside the target repository by default at
 The scanner works offline and does not need API credentials. Triage is an
 external, paid TypeSafe request. A guided run may require several human answers
 and approvals; it does not run unattended.
+
+### Portfolio depth: A, B, or C
+
+At the start of a guided run, you choose how much portfolio preparation is
+appropriate. This selects proportionate work depth; it does not give the worker
+extra authority or automatically select the most expensive model.
+
+- **A — Showcase:** deeper documentation, reproducibility, and validation are
+  worthwhile when supported by the project.
+- **B — Coursework:** provide clear setup, usage, and normal validation without
+  adding production-style ceremony.
+- **C — Archive:** preserve and explain the work with minimal hygiene and concise
+  documentation; do not spend disproportionate effort resurrecting it.
 
 ## Install and first run
 
@@ -98,6 +109,10 @@ prerequisite boundary. See [CLI UX](docs/CLI_UX.md) for the interaction model.
 
 ## Engineering choices
 
+- **Jev for first-pass triage:** TypeSafe/Jev evaluates small, typed,
+  independent classification and clarification questions in parallel. This keeps
+  the initial assessment structured and avoids spending Codex's longer-context
+  editing budget on simple scoring.
 - **One persistent worker context:** inspection, approved editing, and later
   diagnosis reuse repository understanding instead of repeatedly rebuilding it.
 - **Explicit authority:** the worker can propose changes; the human supplies

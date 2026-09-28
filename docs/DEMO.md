@@ -1,6 +1,7 @@
-# Reproducible demo
+# Try the offline demo
 
-The synthetic coursework fixture in
+This short walkthrough is for anyone evaluating Repo Curator from a fresh
+checkout. The synthetic coursework fixture in
 [`examples/synthetic-coursework/`](../examples/synthetic-coursework/) is a
 small, deliberately ordinary local directory. It contains no credentials,
 personal data, or hidden test harness. It does not rely on Git metadata. When
@@ -19,23 +20,30 @@ uv sync --dev
 Then run the read-only scanner:
 
 ```sh
+uv run --frozen python examples/synthetic-coursework/prepare_demo.py
 uv run --frozen repo-curator scan examples/synthetic-coursework
+uv run --frozen python examples/synthetic-coursework/prepare_demo.py --clean
 ```
 
-This command was run against the committed fixture while preparing this
-documentation. It requires neither a TypeSafe key nor Codex or GitHub access,
-does not execute fixture code, and does not modify the fixture.
+The preparation command creates two ignored, disposable files only for this
+demo: `.DS_Store` and `editor.swp`. The scanner reports them, and `--clean`
+removes them again. The demo requires neither a TypeSafe key nor Codex or GitHub
+access, does not execute fixture code, and does not modify the actual project
+files.
 
 Selected output from that verified run:
 
 ```text
 Repository: synthetic-coursework
-Inventory entries: 3
-Languages: Python (1)
+Inventory entries: 7
+Languages: Python (2)
 Ecosystems: Python
 README files: 1
 Risk indicators: 0 secret candidate(s), 0 local-path candidate(s)
 Tracked junk candidates: 0
+Disposable file candidates:
+- .DS_Store
+- editor.swp
 ```
 
 Git status and repository-size fields depend on the enclosing checkout, so they
